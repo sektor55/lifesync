@@ -304,28 +304,43 @@ async def inc_custom(m: Message, state: FSMContext):
 # =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
-    data = get_stats(c.from_user.id)
+    expense_data = get_expense_stats(c.from_user.id)
+    income_data = get_income_stats(c.from_user.id)
 
-    total = sum(x[1] for x in data) if data else 1
-    text = ""
+    # --- суммы ---
+    total_expense = sum(x[1] for x in expense_data) if expense_data else 0
+    total_income = sum(x[1] for x in income_data) if income_data else 0
+    balance = total_income - total_expense
 
-    for cat, val in data:
-        perc = int(val / total * 100)
-        text += f"{cat} — {val} ₽ ({perc}%)\n"
+    text = "📊 Аналитика\n\n"
+
+    # --- ДОХОДЫ ---
+    text += "💰 Доходы:\n"
+    if income_data:
+        for cat, val in income_data:
+            perc = int(val / total_income * 100) if total_income else 0
+            text += f"{cat} — {val} ₽ ({perc}%)\n"
+    else:
+        text += "нет данных\n"
+
+    text += "\n"
+
+    # --- РАСХОДЫ ---
+    text += "💸 Расходы:\n"
+    if expense_data:
+        for cat, val in expense_data:
+            perc = int(val / total_expense * 100) if total_expense else 0
+            text += f"{cat} — {val} ₽ ({perc}%)\n"
+    else:
+        text += "нет данных\n"
+
+    text += "\n"
+
+    # --- ИТОГ ---
+    text += f"📈 Баланс: {balance} ₽\n"
+    text += f"Доход: {total_income} ₽ | Расход: {total_expense} ₽"
 
     await c.message.answer(text, reply_markup=budget_menu())
-
-    # график (НОВОЕ, БЕЗ ВЛИЯНИЯ НА ЛОГИКУ)
-    if data:
-        labels = [x[0] for x in data]
-        sizes = [x[1] for x in data]
-
-        plt.figure()
-        plt.pie(sizes, labels=labels, autopct='%1.0f%%')
-        plt.savefig("chart.png")
-        plt.close()
-
-        await c.message.answer_photo(open("chart.png", "rb"))
 
 
 # =========================
