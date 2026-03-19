@@ -1,6 +1,7 @@
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
@@ -11,6 +12,27 @@ from states import *
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# --- SMART CATEGORY ---
+CATEGORIES = {
+    "Еда": ["пятерочка", "магнит", "ашан", "еда", "kfc", "mcdonalds", "бургер"],
+    "Транспорт": ["такси", "метро", "автобус"],
+    "Быт": ["ozon", "wb", "wildberries"],
+    "Развлечения": ["кино", "игра"],
+    "Кредиты": ["кредит"]
+}
+
+def parse_amount(text):
+    nums = re.findall(r"\d+", text)
+    return int(nums[0]) if nums else None
+
+def detect_category(text):
+    text = text.lower()
+    for cat, words in CATEGORIES.items():
+        for w in words:
+            if w in text:
+                return cat
+    return "Другое"
 
 # --- СТАРТ ---
 @dp.message(CommandStart())
@@ -31,13 +53,46 @@ async def budget(c: CallbackQuery):
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_sum)
-    await c.message.answer("Введи сумму")
+    await c.message.answer("Введи сумму или сообщение")
 
 @dp.message(AddTransaction.waiting_sum)
 async def get_sum(m: Message, state: FSMContext):
-    await state.update_data(amount=int(m.text))
+    amount = parse_amount(m.text)
+
+    if not amount:
+        await m.answer("❌ Не нашел сумму, попробуй еще раз")
+        return
+
+    category = detect_category(m.text)
+
+    await state.update_data(amount=amount, category=category)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
+    ])
+
+    await m.answer(
+        f"Сумма: {amount} ₽\nКатегория: {category}",
+        reply_markup=kb
+    )
+
+@dp.callback_query(F.data == "confirm_expense")
+async def confirm_expense(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    add_transaction(c.from_user.id, data["amount"], "expense", data["category"])
+
+    await state.clear()
+    await c.message.answer(
+        f"✅ {data['amount']} ₽ → {data['category']}",
+        reply_markup=budget_menu()
+    )
+
+@dp.callback_query(F.data == "change_category")
+async def change_category(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_category)
-    await m.answer("Выбери категорию", reply_markup=categories_menu())
+    await c.message.answer("Выбери категорию", reply_markup=categories_menu())
 
 @dp.callback_query(AddTransaction.waiting_category, F.data.startswith("cat_"))
 async def set_cat(c: CallbackQuery, state: FSMContext):
@@ -49,19 +104,33 @@ async def set_cat(c: CallbackQuery, state: FSMContext):
     cat = c.data.replace("cat_", "")
     data = await state.get_data()
 
-    add_transaction(c.from_user.id, data["amount"], "expense", cat)
+    await state.update_data(category=cat)
 
-    await state.clear()
-    await c.message.answer(f"✅ {data['amount']} ₽ → {cat}", reply_markup=budget_menu())
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
+    ])
+
+    await c.message.answer(
+        f"Сумма: {data['amount']} ₽\nКатегория: {cat}",
+        reply_markup=kb
+    )
 
 @dp.message(AddTransaction.waiting_custom_category)
 async def custom_cat(m: Message, state: FSMContext):
     data = await state.get_data()
 
-    add_transaction(m.from_user.id, data["amount"], "expense", m.text)
+    await state.update_data(category=m.text)
 
-    await state.clear()
-    await m.answer(f"✅ {data['amount']} ₽ → {m.text}", reply_markup=budget_menu())
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
+    ])
+
+    await m.answer(
+        f"Сумма: {data['amount']} ₽\nКатегория: {m.text}",
+        reply_markup=kb
+    )
 
 # --- АНАЛИТИКА ---
 @dp.callback_query(F.data == "stats")
