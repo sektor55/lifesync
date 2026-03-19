@@ -13,7 +13,10 @@ from states import *
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- SMART CATEGORY РАСХОД ---
+# =========================
+# ===== РАСХОД (ОРИГИНАЛ) ==
+# =========================
+
 CATEGORIES = {
     "Еда": [
         "пятерочка", "pyaterochka",
@@ -28,12 +31,15 @@ CATEGORIES = {
     "Кредиты": ["кредит", "loan"]
 }
 
-# --- НОВОЕ: категории ДОХОДА ---
+# =========================
+# ===== ДОХОД (НОВОЕ) =====
+# =========================
+
 INCOME_CATEGORIES = {
-    "ЗП": ["зарплата", "зп", "salary", "работа", "work"],
-    "Перевод": ["перевод", "transfer"],
+    "ЗП": ["зарплата", "зп", "salary", "работа"],
+    "Переводы": ["перевод", "transfer"],
     "Подарки": ["подарок", "gift"],
-    "Инвестиции": ["дивиденды", "инвестиции", "invest"]
+    "Инвестиции": ["дивиденды", "invest"]
 }
 
 def parse_amount(text):
@@ -51,52 +57,56 @@ def parse_amount(text):
     
     return int(max(nums))
 
-# --- FIX: теперь учитываем тип (income / expense) ---
-def detect_category(text, user_id, t="expense"):
+# --- РАСХОД detect (ОРИГИНАЛ) ---
+def detect_category(text, user_id):
     text_lower = text.lower()
+
     text_clean = text_lower.replace(".", " ").replace(",", " ")
     text_clean = text_clean.replace("mm", "").replace("mgn", "")
 
-    # --- ОБУЧЕНИЕ ---
+    # --- ОБУЧЕННЫЕ ПРАВИЛА ---
     rules = get_rules(user_id)
     for keyword, cat in rules:
         if keyword in text_clean:
             return cat
 
-    # --- РАСХОД ---
-    if t == "expense":
-        for cat, words in CATEGORIES.items():
-            for w in words:
-                if w in text_clean:
-                    return cat
-
-    # --- ДОХОД ---
-    if t == "income":
-        for cat, words in INCOME_CATEGORIES.items():
-            for w in words:
-                if w in text_clean:
-                    return cat
+    # --- БАЗА ---
+    for cat, words in CATEGORIES.items():
+        for w in words:
+            if w in text_clean:
+                return cat
 
     return "Другое"
 
-# --- СТАРТ ---
+# --- ДОХОД detect (ОТДЕЛЬНЫЙ!) ---
+def detect_income_category(text):
+    text = text.lower()
+
+    for cat, words in INCOME_CATEGORIES.items():
+        for w in words:
+            if w in text:
+                return cat
+
+    return "Другое"
+
+# =========================
+# ===== СТАРТ ============
+# =========================
+
 @dp.message(CommandStart())
 async def start(m: Message):
     await m.answer("🚀 LifeSync", reply_markup=main_menu())
 
-# --- НАВИГАЦИЯ ---
 @dp.callback_query(F.data == "back_main")
 async def back(c: CallbackQuery):
     await c.message.edit_text("Главное меню", reply_markup=main_menu())
 
-# --- БЮДЖЕТ ---
 @dp.callback_query(F.data == "budget")
 async def budget(c: CallbackQuery):
     await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
 
 # =========================
-# ====== РАСХОД ===========
-# (НЕ ТРОГАЕМ ЛОГИКУ)
+# ===== РАСХОД ============
 # =========================
 
 @dp.callback_query(F.data == "expense")
@@ -116,12 +126,16 @@ async def get_sum(m: Message, state: FSMContext):
         await m.answer("❌ Не нашел сумму, попробуй еще раз")
         return
 
-    category = detect_category(m.text, m.from_user.id, t)
+    # --- РАСХОД ---
+    if t == "expense":
+        category = detect_category(m.text, m.from_user.id)
+    else:
+        category = detect_income_category(m.text)
 
     await state.update_data(amount=amount, category=category, original_text=m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
         [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
     ])
 
@@ -130,9 +144,9 @@ async def get_sum(m: Message, state: FSMContext):
         reply_markup=kb
     )
 
-# --- ПОДТВЕРЖДЕНИЕ (универсальное) ---
-@dp.callback_query(F.data == "confirm_expense")
-async def confirm_expense(c: CallbackQuery, state: FSMContext):
+# --- ПОДТВЕРЖДЕНИЕ ---
+@dp.callback_query(F.data == "confirm")
+async def confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
     t = data.get("type", "expense")
@@ -163,7 +177,7 @@ async def set_cat(c: CallbackQuery, state: FSMContext):
     await state.update_data(category=cat)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
         [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
     ])
 
@@ -178,17 +192,38 @@ async def custom_cat(m: Message, state: FSMContext):
 
     await state.update_data(category=m.text)
 
-    # --- ОБУЧЕНИЕ (НЕ ТРОГАЕМ, НО УЛУЧШИЛИ) ---
+    # --- ОРИГИНАЛЬНОЕ ОБУЧЕНИЕ (ВОССТАНОВЛЕНО) ---
     text = data.get("original_text", "").lower()
     if text:
         words = text.split()
-        if len(words) > 1:
-            keyword = words[-1]
-            if len(keyword) > 3:  # FIX мусора
-                add_rule(m.from_user.id, keyword, m.text)
+
+        stop_words = [
+            "покупка", "карта", "баланс", "доступно",
+            "счет", "карты", "rub", "₽"
+        ]
+
+        clean_words = []
+
+        for w in words:
+            w = w.strip(".,:;()")
+
+            if w.isdigit():
+                continue
+            if any(char.isdigit() for char in w):
+                continue
+            if w in stop_words:
+                continue
+            if len(w) < 3:
+                continue
+
+            clean_words.append(w)
+
+        if clean_words:
+            keyword = max(clean_words, key=len)
+            add_rule(m.from_user.id, keyword, m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
         [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data="change_category")]
     ])
 
@@ -198,7 +233,7 @@ async def custom_cat(m: Message, state: FSMContext):
     )
 
 # =========================
-# ====== ДОХОД ============
+# ===== ДОХОД ============
 # =========================
 
 @dp.callback_query(F.data == "income")
