@@ -23,15 +23,30 @@ CATEGORIES = {
 }
 
 def parse_amount(text):
-    nums = re.findall(r"\d+", text)
-    return int(nums[0]) if nums else None
+    text = text.replace(",", ".")
+    
+    matches = re.findall(r"(\d+[.\d]*)\s?(₽|RUB|rub)", text)
+    if matches:
+        return int(float(matches[0][0]))
+    
+    nums = re.findall(r"\d+[.\d]*", text)
+    nums = [float(n) for n in nums if float(n) > 10]
+    
+    if not nums:
+        return None
+    
+    return int(max(nums))
 
 def detect_category(text):
     text = text.lower()
+    text = text.replace("mm", "")
+    text = text.replace("mgn", "")
+
     for cat, words in CATEGORIES.items():
         for w in words:
             if w in text:
                 return cat
+
     return "Другое"
 
 # --- СТАРТ ---
@@ -53,7 +68,7 @@ async def budget(c: CallbackQuery):
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_sum)
-    await c.message.answer("Введи сумму или сообщение")
+    await c.message.answer("Введите сумму или пришлите сообщение из банка")
 
 @dp.message(AddTransaction.waiting_sum)
 async def get_sum(m: Message, state: FSMContext):
