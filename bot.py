@@ -1,5 +1,6 @@
 import asyncio
 import re
+import os
 import matplotlib.pyplot as plt
 
 from aiogram import Bot, Dispatcher, F
@@ -54,20 +55,22 @@ def parse_amount(text):
 
 
 # =========================
-# РАСХОД
+# РАСХОД (С ОБУЧЕНИЕМ)
 # =========================
 def detect_category(text, user_id):
-    text = text.lower().replace(".", " ").replace(",", " ")
-    text = text.replace("mm","").replace("mgn","")
+    text_clean = text.lower().replace(".", " ").replace(",", " ")
+    text_clean = text_clean.replace("mm","").replace("mgn","")
 
+    # 1. обученные правила (ГЛАВНОЕ)
     rules = get_rules(user_id)
     for keyword, cat in rules:
-        if keyword in text:
+        if keyword in text_clean:
             return cat
 
+    # 2. стандартные категории
     for cat, words in CATEGORIES.items():
         for w in words:
-            if w in text:
+            if w in text_clean:
                 return cat
 
     return "Другое"
@@ -145,6 +148,15 @@ async def expense_sum(m: Message, state: FSMContext):
 @dp.callback_query(F.data == "exp_confirm")
 async def exp_confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
+    # ✅ СОХРАНЯЕМ ОБУЧЕНИЕ
+    if data["category"] != "Другое":
+        text = data.get("original_text", "").lower()
+        words = re.findall(r"[a-zA-Zа-яА-Я]+", text)
+        if words:
+            keyword = words[0]
+            add_rule(c.from_user.id, keyword, data["category"])
+
     add_transaction(c.from_user.id, data["amount"], "expense", data["category"])
     await state.clear()
 
@@ -221,56 +233,27 @@ async def inc_confirm(c: CallbackQuery, state: FSMContext):
     await c.message.answer(f"✅ {data['amount']} ₽ → {data['category']}", reply_markup=budget_menu())
 
 
-@dp.callback_query(F.data == "inc_change")
-async def inc_change(c: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💼 ЗП", callback_data="inc_set_ЗП")],
-        [InlineKeyboardButton(text="💸 Перевод", callback_data="inc_set_Перевод")],
-        [InlineKeyboardButton(text="💰 Кэшбэк", callback_data="inc_set_Кэшбэк")],
-        [InlineKeyboardButton(text="📈 Инвестиции", callback_data="inc_set_Инвестиции")],
-        [InlineKeyboardButton(text="➕ Другое", callback_data="inc_custom")]
-    ])
-    await c.message.answer("Выбери категорию дохода", reply_markup=kb)
-
-
-@dp.callback_query(F.data.startswith("inc_set_"))
-async def inc_set(c: CallbackQuery, state: FSMContext):
-    cat = c.data.replace("inc_set_", "")
-    await state.update_data(category=cat)
-
-    data = await state.get_data()
-
-    await c.message.answer(
-        f"Сумма: {data['amount']} ₽\nКатегория: {cat}",
-        reply_markup=confirm_kb("inc")
-    )
-
-
 # =========================
-# 📊 АНАЛИТИКА (НОВОЕ)
+# 📊 АНАЛИТИКА (ПОЧИНЕНА)
 # =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
     uid = c.from_user.id
 
-    # расходы
     cur.execute("SELECT category, SUM(amount) FROM transactions WHERE user_id=? AND type='expense' GROUP BY category",(uid,))
     expenses = cur.fetchall()
 
-    # доходы
     cur.execute("SELECT category, SUM(amount) FROM transactions WHERE user_id=? AND type='income' GROUP BY category",(uid,))
     incomes = cur.fetchall()
 
     text = "📊 Аналитика\n\n"
 
-    # доходы
     total_income = sum(x[1] for x in incomes) if incomes else 0
     text += "💰 Доходы:\n"
     for cat, val in incomes:
         perc = int(val / total_income * 100) if total_income else 0
         text += f"{cat} — {val} ₽ ({perc}%)\n"
 
-    # расходы
     total_expense = sum(x[1] for x in expenses) if expenses else 0
     text += "\n💸 Расходы:\n"
     for cat, val in expenses:
@@ -282,7 +265,7 @@ async def stats(c: CallbackQuery):
 
     await c.message.answer(text)
 
-    # диаграмма
+    # ✅ диаграмма (исправлена)
     if expenses:
         labels = [x[0] for x in expenses]
         sizes = [x[1] for x in expenses]
@@ -292,12 +275,20 @@ async def stats(c: CallbackQuery):
             val = int(pct * total / 100)
             return f"{val} ₽\n({int(pct)}%)"
 
-        plt.figure()
+        plt.figure(figsize=(6,6))
         plt.pie(sizes, labels=labels, autopct=autopct)
-        plt.savefig("chart.png")
+        plt.title("Расходы")
+        plt.tight_layout()
+
+        path = "chart.png"
+        plt.savefig(path)
         plt.close()
 
-        await c.message.answer_photo(open("chart.png","rb"))
+        with open(path, "rb") as photo:
+            await c.message.answer_photo(photo)
+
+        if os.path.exists(path):
+            os.remove(path)
 
 
 # =========================
