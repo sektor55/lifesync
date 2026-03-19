@@ -57,7 +57,7 @@ def get_income_stats(uid):
     return cur.fetchall()
 
 
-# СТАРОЕ (не ломаем)
+# СТАРОЕ (НЕ ЛОМАЕМ)
 def get_stats(uid):
     return get_expense_stats(uid)
 

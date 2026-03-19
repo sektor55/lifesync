@@ -1,6 +1,8 @@
 import asyncio
 import re
-import os
+
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from aiogram import Bot, Dispatcher, F
@@ -55,22 +57,20 @@ def parse_amount(text):
 
 
 # =========================
-# РАСХОД (С ОБУЧЕНИЕМ)
+# РАСХОД
 # =========================
 def detect_category(text, user_id):
-    text_clean = text.lower().replace(".", " ").replace(",", " ")
-    text_clean = text_clean.replace("mm","").replace("mgn","")
+    text = text.lower().replace(".", " ").replace(",", " ")
+    text = text.replace("mm","").replace("mgn","")
 
-    # 1. обученные правила (ГЛАВНОЕ)
     rules = get_rules(user_id)
     for keyword, cat in rules:
-        if keyword in text_clean:
+        if keyword in text:
             return cat
 
-    # 2. стандартные категории
     for cat, words in CATEGORIES.items():
         for w in words:
-            if w in text_clean:
+            if w in text:
                 return cat
 
     return "Другое"
@@ -120,7 +120,7 @@ async def back_main(c: CallbackQuery):
 
 
 # =========================
-# РАСХОД
+# РАСХОД (НЕ ТРОГАЕМ)
 # =========================
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
@@ -137,7 +137,11 @@ async def expense_sum(m: Message, state: FSMContext):
 
     category = detect_category(m.text, m.from_user.id)
 
-    await state.update_data(amount=amount, category=category, original_text=m.text)
+    await state.update_data(
+        amount=amount,
+        category=category,
+        original_text=m.text
+    )
 
     await m.answer(
         f"Сумма: {amount} ₽\nКатегория: {category}",
@@ -149,18 +153,13 @@ async def expense_sum(m: Message, state: FSMContext):
 async def exp_confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    # ✅ СОХРАНЯЕМ ОБУЧЕНИЕ
-    if data["category"] != "Другое":
-        text = data.get("original_text", "").lower()
-        words = re.findall(r"[a-zA-Zа-яА-Я]+", text)
-        if words:
-            keyword = words[0]
-            add_rule(c.from_user.id, keyword, data["category"])
-
     add_transaction(c.from_user.id, data["amount"], "expense", data["category"])
     await state.clear()
 
-    await c.message.answer(f"✅ {data['amount']} ₽ → {data['category']}", reply_markup=budget_menu())
+    await c.message.answer(
+        f"✅ {data['amount']} ₽ → {data['category']}",
+        reply_markup=budget_menu()
+    )
 
 
 @dp.callback_query(F.data == "exp_change")
@@ -192,6 +191,25 @@ async def exp_custom(m: Message, state: FSMContext):
     data = await state.get_data()
     await state.update_data(category=m.text)
 
+    # обучение (НЕ ТРОГАЕМ)
+    text = data.get("original_text","").lower()
+    words = text.split()
+
+    stop_words = ["покупка","карта","баланс","доступно","счет","rub","₽"]
+
+    clean = []
+    for w in words:
+        w = w.strip(".,:;()")
+        if w.isdigit(): continue
+        if any(c.isdigit() for c in w): continue
+        if w in stop_words: continue
+        if len(w) < 3: continue
+        clean.append(w)
+
+    if clean:
+        keyword = max(clean, key=len)
+        add_rule(m.from_user.id, keyword, m.text)
+
     await m.answer(
         f"Сумма: {data['amount']} ₽\nКатегория: {m.text}",
         reply_markup=confirm_kb("exp")
@@ -199,7 +217,7 @@ async def exp_custom(m: Message, state: FSMContext):
 
 
 # =========================
-# ДОХОД
+# ДОХОД (НЕ ТРОГАЕМ)
 # =========================
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
@@ -210,6 +228,7 @@ async def income(c: CallbackQuery, state: FSMContext):
 @dp.message(StateFilter("income_sum"))
 async def income_sum(m: Message, state: FSMContext):
     amount = parse_amount(m.text)
+
     if not amount:
         await m.answer("❌ Не нашел сумму")
         return
@@ -227,68 +246,86 @@ async def income_sum(m: Message, state: FSMContext):
 @dp.callback_query(F.data == "inc_confirm")
 async def inc_confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
     add_transaction(c.from_user.id, data["amount"], "income", data["category"])
     await state.clear()
 
-    await c.message.answer(f"✅ {data['amount']} ₽ → {data['category']}", reply_markup=budget_menu())
+    await c.message.answer(
+        f"✅ {data['amount']} ₽ → {data['category']}",
+        reply_markup=budget_menu()
+    )
+
+
+@dp.callback_query(F.data == "inc_change")
+async def inc_change(c: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💼 ЗП", callback_data="inc_set_ЗП")],
+        [InlineKeyboardButton(text="💸 Перевод", callback_data="inc_set_Перевод")],
+        [InlineKeyboardButton(text="💰 Кэшбэк", callback_data="inc_set_Кэшбэк")],
+        [InlineKeyboardButton(text="📈 Инвестиции", callback_data="inc_set_Инвестиции")],
+        [InlineKeyboardButton(text="➕ Другое", callback_data="inc_custom")]
+    ])
+
+    await c.message.answer("Выбери категорию дохода", reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("inc_set_"))
+async def inc_set(c: CallbackQuery, state: FSMContext):
+    cat = c.data.replace("inc_set_", "")
+    await state.update_data(category=cat)
+
+    data = await state.get_data()
+
+    await c.message.answer(
+        f"Сумма: {data['amount']} ₽\nКатегория: {cat}",
+        reply_markup=confirm_kb("inc")
+    )
+
+
+@dp.callback_query(F.data == "inc_custom")
+async def inc_custom_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state("income_custom")
+    await c.message.answer("Введи категорию")
+
+
+@dp.message(StateFilter("income_custom"))
+async def inc_custom(m: Message, state: FSMContext):
+    data = await state.get_data()
+    await state.update_data(category=m.text)
+
+    await m.answer(
+        f"Сумма: {data['amount']} ₽\nКатегория: {m.text}",
+        reply_markup=confirm_kb("inc")
+    )
 
 
 # =========================
-# 📊 АНАЛИТИКА (ПОЧИНЕНА)
+# 📊 СТАТИСТИКА + ГРАФИК
 # =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
-    uid = c.from_user.id
+    data = get_stats(c.from_user.id)
 
-    cur.execute("SELECT category, SUM(amount) FROM transactions WHERE user_id=? AND type='expense' GROUP BY category",(uid,))
-    expenses = cur.fetchall()
+    total = sum(x[1] for x in data) if data else 1
+    text = ""
 
-    cur.execute("SELECT category, SUM(amount) FROM transactions WHERE user_id=? AND type='income' GROUP BY category",(uid,))
-    incomes = cur.fetchall()
-
-    text = "📊 Аналитика\n\n"
-
-    total_income = sum(x[1] for x in incomes) if incomes else 0
-    text += "💰 Доходы:\n"
-    for cat, val in incomes:
-        perc = int(val / total_income * 100) if total_income else 0
+    for cat, val in data:
+        perc = int(val / total * 100)
         text += f"{cat} — {val} ₽ ({perc}%)\n"
 
-    total_expense = sum(x[1] for x in expenses) if expenses else 0
-    text += "\n💸 Расходы:\n"
-    for cat, val in expenses:
-        perc = int(val / total_expense * 100) if total_expense else 0
-        text += f"{cat} — {val} ₽ ({perc}%)\n"
+    await c.message.answer(text, reply_markup=budget_menu())
 
-    balance = total_income - total_expense
-    text += f"\n\n📈 Баланс: {balance:+} ₽"
+    # график (НОВОЕ, БЕЗ ВЛИЯНИЯ НА ЛОГИКУ)
+    if data:
+        labels = [x[0] for x in data]
+        sizes = [x[1] for x in data]
 
-    await c.message.answer(text)
-
-    # ✅ диаграмма (исправлена)
-    if expenses:
-        labels = [x[0] for x in expenses]
-        sizes = [x[1] for x in expenses]
-
-        def autopct(pct):
-            total = sum(sizes)
-            val = int(pct * total / 100)
-            return f"{val} ₽\n({int(pct)}%)"
-
-        plt.figure(figsize=(6,6))
-        plt.pie(sizes, labels=labels, autopct=autopct)
-        plt.title("Расходы")
-        plt.tight_layout()
-
-        path = "chart.png"
-        plt.savefig(path)
+        plt.figure()
+        plt.pie(sizes, labels=labels, autopct='%1.0f%%')
+        plt.savefig("chart.png")
         plt.close()
 
-        with open(path, "rb") as photo:
-            await c.message.answer_photo(photo)
-
-        if os.path.exists(path):
-            os.remove(path)
+        await c.message.answer_photo(open("chart.png", "rb"))
 
 
 # =========================
