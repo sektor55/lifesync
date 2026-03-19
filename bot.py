@@ -2,7 +2,7 @@ import asyncio
 import re
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 
 from config import TOKEN
@@ -13,7 +13,7 @@ from states import *
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- SMART CATEGORY (РАСХОД) ---
+# --- SMART CATEGORY (РАСХОД — НЕ ТРОГАЕМ) ---
 CATEGORIES = {
     "Еда": [
         "пятерочка", "pyaterochka",
@@ -28,11 +28,12 @@ CATEGORIES = {
     "Кредиты": ["кредит", "loan"]
 }
 
-# --- ДОХОД (ОТДЕЛЬНО!) ---
+# --- ДОХОД (СВОИ КАТЕГОРИИ) ---
 INCOME_CATEGORIES = {
     "ЗП": ["зарплата", "salary", "работа", "job"],
     "Перевод": ["перевод", "transfer"],
     "Кэшбэк": ["cashback"],
+    "Инвестиции": ["дивиденды", "invest"],
     "Другое": []
 }
 
@@ -54,7 +55,7 @@ def parse_amount(text):
 
 
 # =========================
-# РАСХОД (НЕ ТРОГАЕМ ЛОГИКУ)
+# РАСХОД (ИДЕАЛ — НЕ ТРОГАЕМ)
 # =========================
 def detect_category(text, user_id):
     text_lower = text.lower()
@@ -62,13 +63,11 @@ def detect_category(text, user_id):
     text_clean = text_lower.replace(".", " ").replace(",", " ")
     text_clean = text_clean.replace("mm", "").replace("mgn", "")
 
-    # --- ОБУЧЕНИЕ ---
     rules = get_rules(user_id)
     for keyword, cat in rules:
         if keyword in text_clean:
             return cat
 
-    # --- БАЗА ---
     for cat, words in CATEGORIES.items():
         for w in words:
             if w in text_clean:
@@ -78,7 +77,7 @@ def detect_category(text, user_id):
 
 
 # =========================
-# ДОХОД (ОТДЕЛЬНАЯ ЛОГИКА)
+# ДОХОД (ОТДЕЛЬНО)
 # =========================
 def detect_income_category(text):
     text = text.lower()
@@ -104,7 +103,7 @@ async def budget(c: CallbackQuery):
 
 
 # =========================
-# РАСХОД
+# РАСХОД (НЕ ТРОГАЕМ)
 # =========================
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
@@ -157,7 +156,6 @@ async def custom_cat(m: Message, state: FSMContext):
 
     add_transaction(m.from_user.id, data["amount"], "expense", m.text)
 
-    # --- УМНОЕ ОБУЧЕНИЕ (ФИКС) ---
     text = data.get("original_text", "").lower()
 
     words = text.split()
@@ -181,15 +179,15 @@ async def custom_cat(m: Message, state: FSMContext):
 
 
 # =========================
-# ДОХОД (НОВОЕ, НЕ ЛОМАЕТ РАСХОД)
+# ДОХОД (ПОЛНОСТЬЮ ОТДЕЛЬНО)
 # =========================
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
-    await state.set_state("income_sum")
+    await state.set_state("income_wait_sum")
     await c.message.answer("Введите сумму дохода")
 
 
-@dp.message(F.text, state="income_sum")
+@dp.message(StateFilter("income_wait_sum"))
 async def income_sum(m: Message, state: FSMContext):
     amount = parse_amount(m.text)
 
@@ -205,6 +203,7 @@ async def income_sum(m: Message, state: FSMContext):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💼 ЗП", callback_data="inc_ЗП")],
             [InlineKeyboardButton(text="💸 Перевод", callback_data="inc_Перевод")],
+            [InlineKeyboardButton(text="💰 Кэшбэк", callback_data="inc_Кэшбэк")],
             [InlineKeyboardButton(text="➕ Другое", callback_data="inc_custom")]
         ])
 
@@ -222,7 +221,7 @@ async def income_set_cat(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
     if c.data == "inc_custom":
-        await state.set_state("income_custom")
+        await state.set_state("income_wait_custom")
         await c.message.answer("Введи категорию дохода")
         return
 
@@ -233,7 +232,7 @@ async def income_set_cat(c: CallbackQuery, state: FSMContext):
     await c.message.answer(f"✅ {data['amount']} ₽ → {cat}", reply_markup=budget_menu())
 
 
-@dp.message(F.text, state="income_custom")
+@dp.message(StateFilter("income_wait_custom"))
 async def income_custom(m: Message, state: FSMContext):
     data = await state.get_data()
 
