@@ -28,7 +28,6 @@ CATEGORIES = {
     "Кредиты": ["кредит", "loan"]
 }
 
-# --- ДОХОД КАТЕГОРИИ ---
 INCOME_CATEGORIES = ["ЗП", "Фриланс", "Инвестиции", "Подарок", "Другое"]
 
 def parse_amount(text):
@@ -80,7 +79,7 @@ async def budget(c: CallbackQuery):
     await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
 
 # =========================
-# 💸 РАСХОД (НЕ ТРОГАЕМ)
+# 💸 РАСХОД
 # =========================
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
@@ -122,11 +121,10 @@ async def confirm_expense(c: CallbackQuery, state: FSMContext):
     )
 
 # =========================
-# 💰 ДОХОД (ИСПРАВЛЕН)
+# 💰 ДОХОД (ЧИСТО ОТДЕЛЕН)
 # =========================
 class IncomeState:
     waiting_sum = "income_sum"
-    waiting_category = "income_category"
 
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
@@ -141,13 +139,12 @@ async def income_sum(m: Message, state: FSMContext):
         await m.answer("❌ Не нашел сумму")
         return
 
-    await state.update_data(amount=amount)
-
-    # кнопки категорий
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=cat, callback_data=f"income_cat_{cat}")]
         for cat in INCOME_CATEGORIES
     ])
+
+    await state.update_data(amount=amount)
 
     await m.answer(f"Доход: {amount} ₽\nВыбери категорию", reply_markup=kb)
 
