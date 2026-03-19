@@ -151,12 +151,34 @@ async def custom_cat(m: Message, state: FSMContext):
 
     await state.update_data(category=m.text)
 
-    # --- ОБУЧЕНИЕ ---
+    # --- ОБУЧЕНИЕ (ИСПРАВЛЕНО) ---
     text = data.get("original_text", "").lower()
     if text:
         words = text.split()
-        if len(words) > 1:
-            keyword = words[-1]
+
+        stop_words = [
+            "покупка", "карта", "баланс", "доступно",
+            "счет", "карты", "rub", "₽"
+        ]
+
+        clean_words = []
+
+        for w in words:
+            w = w.strip(".,:;()")
+
+            if w.isdigit():
+                continue
+            if any(char.isdigit() for char in w):
+                continue
+            if w in stop_words:
+                continue
+            if len(w) < 3:
+                continue
+
+            clean_words.append(w)
+
+        if clean_words:
+            keyword = max(clean_words, key=len)
             add_rule(m.from_user.id, keyword, m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
