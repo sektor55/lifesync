@@ -28,6 +28,9 @@ CATEGORIES = {
     "Кредиты": ["кредит", "loan"]
 }
 
+# --- ДОХОД КАТЕГОРИИ ---
+INCOME_CATEGORIES = ["ЗП", "Фриланс", "Инвестиции", "Подарок", "Другое"]
+
 def parse_amount(text):
     text = text.replace(",", ".")
     
@@ -49,13 +52,11 @@ def detect_category(text, user_id):
     text_clean = text_lower.replace(".", " ").replace(",", " ")
     text_clean = text_clean.replace("mm", "").replace("mgn", "")
 
-    # --- ОБУЧЕННЫЕ ПРАВИЛА ---
     rules = get_rules(user_id)
     for keyword, cat in rules:
         if keyword in text_clean:
             return cat
 
-    # --- БАЗА ---
     for cat, words in CATEGORIES.items():
         for w in words:
             if w in text_clean:
@@ -121,34 +122,19 @@ async def confirm_expense(c: CallbackQuery, state: FSMContext):
     )
 
 # =========================
-# 💰 ДОХОД (НОВОЕ)
+# 💰 ДОХОД (ИСПРАВЛЕН)
 # =========================
+class IncomeState:
+    waiting_sum = "income_sum"
+    waiting_category = "income_category"
+
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
-    await state.set_state(AddTransaction.waiting_sum)
+    await state.set_state(IncomeState.waiting_sum)
     await c.message.answer("Введите сумму дохода")
 
-@dp.callback_query(F.data == "confirm_income")
-async def confirm_income(c: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-
-    add_transaction(c.from_user.id, data["amount"], "income", "Доход")
-
-    await state.clear()
-    await c.message.answer(
-        f"💰 +{data['amount']} ₽",
-        reply_markup=budget_menu()
-    )
-
-# 🔥 перехватываем подтверждение для дохода
-@dp.message(AddTransaction.waiting_sum)
-async def get_income_or_expense(m: Message, state: FSMContext):
-    data = await state.get_data()
-
-    # если уже есть category → это расход (старый обработчик)
-    if "category" in data:
-        return
-
+@dp.message(F.text, IncomeState.waiting_sum)
+async def income_sum(m: Message, state: FSMContext):
     amount = parse_amount(m.text)
 
     if not amount:
@@ -157,11 +143,26 @@ async def get_income_or_expense(m: Message, state: FSMContext):
 
     await state.update_data(amount=amount)
 
+    # кнопки категорий
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_income")]
+        [InlineKeyboardButton(text=cat, callback_data=f"income_cat_{cat}")]
+        for cat in INCOME_CATEGORIES
     ])
 
-    await m.answer(f"Доход: {amount} ₽", reply_markup=kb)
+    await m.answer(f"Доход: {amount} ₽\nВыбери категорию", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("income_cat_"))
+async def income_category(c: CallbackQuery, state: FSMContext):
+    cat = c.data.replace("income_cat_", "")
+    data = await state.get_data()
+
+    add_transaction(c.from_user.id, data["amount"], "income", cat)
+
+    await state.clear()
+    await c.message.answer(
+        f"💰 +{data['amount']} ₽ ({cat})",
+        reply_markup=budget_menu()
+    )
 
 # =========================
 # ИЗМЕНЕНИЕ КАТЕГОРИИ
@@ -199,7 +200,6 @@ async def custom_cat(m: Message, state: FSMContext):
 
     await state.update_data(category=m.text)
 
-    # --- ОБУЧЕНИЕ ---
     text = data.get("original_text", "").lower()
     if text:
         words = text.split()
