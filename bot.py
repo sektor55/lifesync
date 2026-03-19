@@ -1,116 +1,56 @@
 import asyncio
 import re
-import sqlite3
-from datetime import datetime
-
+import random
 import matplotlib.pyplot as plt
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import TOKEN
+from database import *
+from keyboards import *
+from states import user_state
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-user_temp = {}
+LIMIT = 50
 
-# ---------------- DATABASE ----------------
-
-conn = sqlite3.connect("data.db")
-cur = conn.cursor()
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS transactions(
-    user_id INTEGER,
-    amount INTEGER,
-    type TEXT,
-    category TEXT,
-    date TEXT
-)
-""")
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS habits(
-    user_id INTEGER,
-    name TEXT,
-    done INTEGER
-)
-""")
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS family(
-    user_id INTEGER,
-    name TEXT
-)
-""")
-
-conn.commit()
-
-# ---------------- BASE ----------------
 
 BASE = {
-    "Еда": [
-        "еда","продукты","магазин","супермаркет",
-        "пятерочка","магнит","лента","ашан","перекресток",
-        "kfc","mcd","burger","пицца","pizza","суши",
-        "кафе","ресторан","кофе"
-    ],
-    "Транспорт": [
-        "бензин","заправка","fuel",
-        "лукойл","газпром",
-        "такси","uber","яндекс","метро"
-    ],
-    "Быт": [
-        "ozon","wildberries","wb",
-        "аптека","ikea","fixprice"
-    ],
-    "Развлечения": [
-        "steam","игра","netflix",
-        "кино","подписка"
-    ],
-    "Кредиты": [
-        "кредит","ипотека","банк"
-    ]
+    "Еда": ["пятерочка","магнит","ашан","еда","kfc","mcd","burger"],
+    "Быт": ["ozon","wildberries","аптека"],
+    "Транспорт": ["лукойл","газпром","бензин"],
+    "Развлечения": ["steam","netflix"],
+    "Кредиты": ["кредит","ипотека"]
 }
 
-# ---------------- UTILS ----------------
 
 def detect(text):
     text = text.lower()
+
+    for w, c in cur.execute("SELECT * FROM learn"):
+        if w in text:
+            return c, True, w
+
     for cat, words in BASE.items():
         for w in words:
             if w in text:
-                return cat
-    return "Другое"
+                return cat, False, w
+
+    return "Другое", False, None
+
 
 def parse(text):
     nums = re.findall(r"\d+", text)
     return int(nums[0]) if nums else None
 
-# ---------------- KEYBOARDS ----------------
-
-def main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Бюджет", callback_data="budget")],
-        [InlineKeyboardButton(text="🏆 Привычки", callback_data="habits")],
-        [InlineKeyboardButton(text="👨‍👩‍👧‍👦 Семья", callback_data="family")]
-    ])
-
-def budget_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💸 Расход", callback_data="expense")],
-        [InlineKeyboardButton(text="💰 Доход", callback_data="income")],
-        [InlineKeyboardButton(text="📈 Аналитика", callback_data="stats")]
-    ])
-
-# ---------------- HANDLERS ----------------
 
 @dp.message(CommandStart())
 async def start(m: Message):
-    await m.answer("LifeSync 🚀", reply_markup=main_menu())
+    await m.answer("🚀 LifeSync", reply_markup=main_menu())
+
 
 @dp.callback_query()
 async def click(c: CallbackQuery):
@@ -119,16 +59,92 @@ async def click(c: CallbackQuery):
     if c.data == "budget":
         await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
 
-    elif c.data == "expense":
-        user_temp[uid] = {"type": "expense"}
-        await c.message.answer("Введи сумму или сообщение банка")
+    elif c.data == "habits":
+        await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
 
-    elif c.data == "income":
-        user_temp[uid] = {"type": "income"}
-        await c.message.answer("Введи сумму")
+    elif c.data == "family":
+        await c.message.edit_text("👨‍👩‍👧 Семья", reply_markup=family_menu())
 
+    elif c.data == "back":
+        await c.message.edit_text("🏠 Меню", reply_markup=main_menu())
+
+    # ---------- ДОХОД/РАСХОД ----------
+    elif c.data in ["expense","income"]:
+        user_state[uid] = {"type": c.data}
+        await c.message.answer("Введи сумму или текст")
+
+    elif c.data == "ok":
+        d = user_state[uid]
+
+        cur.execute("INSERT INTO transactions VALUES(NULL,?,?,?,?,?)",
+                    (uid, c.from_user.username, d["amount"], d["type"], d["cat"]))
+        conn.commit()
+
+        if not d["learn"] and d["word"]:
+            await c.message.answer("Запомнить?", reply_markup=confirm_menu())
+            return
+
+        await c.message.answer("Сохранено ✅")
+
+    elif c.data.startswith("cat_"):
+        user_state[uid]["cat"] = c.data.split("_")[1]
+        await c.message.answer("Выбрано", reply_markup=confirm_menu())
+
+    elif c.data == "change_cat":
+        await c.message.answer("Выбери:", reply_markup=categories_menu())
+
+    # ---------- ПРИВЫЧКИ ----------
+    elif c.data == "add_habit":
+        user_state[uid] = {"habit_name": True}
+        await c.message.answer("Название:")
+
+    elif c.data.startswith("day_"):
+        day = c.data.split("_")[1]
+        user_state[uid]["days"].append(day)
+        await c.message.edit_reply_markup(reply_markup=days_menu(user_state[uid]["days"]))
+
+    elif c.data == "days_done":
+        d = user_state[uid]
+        cur.execute("INSERT INTO habits VALUES(NULL,?,?,?,?)",
+                    (uid, d["name"], ",".join(d["days"]), ""))
+        conn.commit()
+        await c.message.answer("Привычка создана")
+        user_state.pop(uid)
+
+    elif c.data == "progress":
+        cur.execute("SELECT name,done FROM habits WHERE user_id=?", (uid,))
+        data = cur.fetchall()
+
+        text = ""
+        for n,dn in data:
+            done = len(dn.split(",")) if dn else 0
+            bar = "🟩"*done + "⬜"*(7-done)
+            text += f"{n}\n{bar}\n\n"
+
+        await c.message.answer(text)
+
+    elif c.data == "history":
+        await c.message.answer("История: скоро (заготовка)")
+
+    # ---------- СЕМЬЯ ----------
+    elif c.data == "create_family":
+        code = str(random.randint(10000,99999))
+        cur.execute("INSERT INTO families VALUES(NULL,?)", (code,))
+        conn.commit()
+        await c.message.answer(f"Код: {code}")
+
+    elif c.data == "join_family":
+        user_state[uid] = {"join": True}
+        await c.message.answer("Код семьи:")
+
+    # ---------- СТАТИСТИКА ----------
     elif c.data == "stats":
-        cur.execute("SELECT category, SUM(amount) FROM transactions WHERE user_id=? GROUP BY category", (uid,))
+        cur.execute("""
+        SELECT category, SUM(amount)
+        FROM transactions
+        WHERE user_id=? AND type='expense'
+        GROUP BY category
+        """,(uid,))
         data = cur.fetchall()
 
         if not data:
@@ -138,70 +154,52 @@ async def click(c: CallbackQuery):
         labels = [x[0] for x in data]
         sizes = [x[1] for x in data]
 
-        text = ""
-        total = sum(sizes)
-
-        for l, s in zip(labels, sizes):
-            perc = int(s / total * 100)
-            text += f"{l} — {s} ₽ ({perc}%)\n"
-
         plt.clf()
         plt.pie(sizes, labels=labels, autopct='%1.1f%%')
         plt.savefig("chart.png")
 
-        await c.message.answer(text)
         await c.message.answer_photo(FSInputFile("chart.png"))
-
-    elif c.data == "habits":
-        await c.message.answer("🏆 Привычки\nНапиши: добавить привычку")
-
-    elif c.data == "family":
-        await c.message.answer("👨‍👩‍👧‍👦 Семья\nНапиши имя участника")
 
     await c.answer()
 
-# ---------------- MESSAGE ----------------
 
 @dp.message()
 async def msg(m: Message):
     uid = m.from_user.id
-    text = m.text.lower()
 
-    # ---- привычки ----
-    if "привычку" in text:
-        name = text.replace("добавить привычку", "").strip()
-        cur.execute("INSERT INTO habits VALUES (?, ?, 0)", (uid, name))
-        conn.commit()
-        await m.answer(f"Добавлена привычка: {name}")
+    # JOIN
+    if uid in user_state and user_state[uid].get("join"):
+        cur.execute("SELECT id FROM families WHERE code=?", (m.text,))
+        fam = cur.fetchone()
+        if fam:
+            cur.execute("INSERT OR REPLACE INTO users VALUES(?,?)", (uid, fam[0]))
+            conn.commit()
+            await m.answer("В семье ✅")
+        else:
+            await m.answer("Ошибка")
+        user_state.pop(uid)
         return
 
-    # ---- семья ----
-    if "семья" not in user_temp and len(text.split()) == 1:
-        cur.execute("INSERT INTO family VALUES (?, ?)", (uid, text))
-        conn.commit()
-        await m.answer(f"Добавлен: {text}")
+    # HABIT NAME
+    if uid in user_state and user_state[uid].get("habit_name"):
+        user_state[uid] = {"name": m.text, "days": []}
+        await m.answer("Выбери дни:", reply_markup=days_menu([]))
         return
 
-    # ---- бюджет ----
-    if uid not in user_temp:
-        return
+    # ТРАНЗАКЦИЯ
+    amount = parse(m.text)
+    if amount and uid in user_state:
+        cat, learned, word = detect(m.text)
 
-    amount = parse(text)
-    if not amount:
-        await m.answer("Не понял сумму")
-        return
+        user_state[uid].update({
+            "amount": amount,
+            "cat": cat,
+            "learn": learned,
+            "word": word
+        })
 
-    cat = detect(text)
+        await m.answer(f"{amount} ₽ → {cat}", reply_markup=confirm_menu())
 
-    cur.execute(
-        "INSERT INTO transactions VALUES (?, ?, ?, ?, ?)",
-        (uid, amount, user_temp[uid]["type"], cat, datetime.now().strftime("%Y-%m-%d"))
-    )
-    conn.commit()
-
-    await m.answer(f"✅ {amount} ₽ → {cat}")
-
-# ---------------- RUN ----------------
 
 async def main():
     await dp.start_polling(bot)
