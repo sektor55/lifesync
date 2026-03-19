@@ -15,11 +15,17 @@ dp = Dispatcher()
 
 # --- SMART CATEGORY ---
 CATEGORIES = {
-    "Еда": ["пятерочка", "магнит", "ашан", "еда", "kfc", "mcdonalds", "бургер"],
-    "Транспорт": ["такси", "метро", "автобус"],
+    "Еда": [
+        "пятерочка", "pyaterochka",
+        "магнит", "magnit",
+        "ашан", "auchan",
+        "еда", "food",
+        "kfc", "mcdonalds", "burger", "бургер"
+    ],
+    "Транспорт": ["такси", "taxi", "метро", "автобус"],
     "Быт": ["ozon", "wb", "wildberries"],
-    "Развлечения": ["кино", "игра"],
-    "Кредиты": ["кредит"]
+    "Развлечения": ["кино", "cinema", "игра", "game"],
+    "Кредиты": ["кредит", "loan"]
 }
 
 def parse_amount(text):
@@ -37,14 +43,22 @@ def parse_amount(text):
     
     return int(max(nums))
 
-def detect_category(text):
-    text = text.lower()
-    text = text.replace("mm", "")
-    text = text.replace("mgn", "")
+def detect_category(text, user_id):
+    text_lower = text.lower()
 
+    text_clean = text_lower.replace(".", " ").replace(",", " ")
+    text_clean = text_clean.replace("mm", "").replace("mgn", "")
+
+    # --- ОБУЧЕННЫЕ ПРАВИЛА ---
+    rules = get_rules(user_id)
+    for keyword, cat in rules:
+        if keyword in text_clean:
+            return cat
+
+    # --- БАЗА ---
     for cat, words in CATEGORIES.items():
         for w in words:
-            if w in text:
+            if w in text_clean:
                 return cat
 
     return "Другое"
@@ -78,9 +92,9 @@ async def get_sum(m: Message, state: FSMContext):
         await m.answer("❌ Не нашел сумму, попробуй еще раз")
         return
 
-    category = detect_category(m.text)
+    category = detect_category(m.text, m.from_user.id)
 
-    await state.update_data(amount=amount, category=category)
+    await state.update_data(amount=amount, category=category, original_text=m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
@@ -136,6 +150,14 @@ async def custom_cat(m: Message, state: FSMContext):
     data = await state.get_data()
 
     await state.update_data(category=m.text)
+
+    # --- ОБУЧЕНИЕ ---
+    text = data.get("original_text", "").lower()
+    if text:
+        words = text.split()
+        if len(words) > 1:
+            keyword = words[-1]
+            add_rule(m.from_user.id, keyword, m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
