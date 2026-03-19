@@ -13,7 +13,7 @@ from states import *
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- SMART CATEGORY ---
+# --- SMART CATEGORY РАСХОД ---
 CATEGORIES = {
     "Еда": [
         "пятерочка", "pyaterochka",
@@ -28,7 +28,13 @@ CATEGORIES = {
     "Кредиты": ["кредит", "loan"]
 }
 
-INCOME_CATEGORIES = ["ЗП", "Фриланс", "Инвестиции", "Подарок", "Другое"]
+# --- НОВОЕ: категории ДОХОДА ---
+INCOME_CATEGORIES = {
+    "ЗП": ["зарплата", "зп", "salary", "работа", "work"],
+    "Перевод": ["перевод", "transfer"],
+    "Подарки": ["подарок", "gift"],
+    "Инвестиции": ["дивиденды", "инвестиции", "invest"]
+}
 
 def parse_amount(text):
     text = text.replace(",", ".")
@@ -45,21 +51,31 @@ def parse_amount(text):
     
     return int(max(nums))
 
-def detect_category(text, user_id):
+# --- FIX: теперь учитываем тип (income / expense) ---
+def detect_category(text, user_id, t="expense"):
     text_lower = text.lower()
-
     text_clean = text_lower.replace(".", " ").replace(",", " ")
     text_clean = text_clean.replace("mm", "").replace("mgn", "")
 
+    # --- ОБУЧЕНИЕ ---
     rules = get_rules(user_id)
     for keyword, cat in rules:
         if keyword in text_clean:
             return cat
 
-    for cat, words in CATEGORIES.items():
-        for w in words:
-            if w in text_clean:
-                return cat
+    # --- РАСХОД ---
+    if t == "expense":
+        for cat, words in CATEGORIES.items():
+            for w in words:
+                if w in text_clean:
+                    return cat
+
+    # --- ДОХОД ---
+    if t == "income":
+        for cat, words in INCOME_CATEGORIES.items():
+            for w in words:
+                if w in text_clean:
+                    return cat
 
     return "Другое"
 
@@ -79,22 +95,28 @@ async def budget(c: CallbackQuery):
     await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
 
 # =========================
-# 💸 РАСХОД
+# ====== РАСХОД ===========
+# (НЕ ТРОГАЕМ ЛОГИКУ)
 # =========================
+
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_sum)
+    await state.update_data(type="expense")
     await c.message.answer("Введите сумму или пришлите сообщение из банка")
 
 @dp.message(AddTransaction.waiting_sum)
 async def get_sum(m: Message, state: FSMContext):
+    data = await state.get_data()
+    t = data.get("type", "expense")
+
     amount = parse_amount(m.text)
 
     if not amount:
         await m.answer("❌ Не нашел сумму, попробуй еще раз")
         return
 
-    category = detect_category(m.text, m.from_user.id)
+    category = detect_category(m.text, m.from_user.id, t)
 
     await state.update_data(amount=amount, category=category, original_text=m.text)
 
@@ -108,11 +130,14 @@ async def get_sum(m: Message, state: FSMContext):
         reply_markup=kb
     )
 
+# --- ПОДТВЕРЖДЕНИЕ (универсальное) ---
 @dp.callback_query(F.data == "confirm_expense")
 async def confirm_expense(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    add_transaction(c.from_user.id, data["amount"], "expense", data["category"])
+    t = data.get("type", "expense")
+
+    add_transaction(c.from_user.id, data["amount"], t, data["category"])
 
     await state.clear()
     await c.message.answer(
@@ -120,50 +145,6 @@ async def confirm_expense(c: CallbackQuery, state: FSMContext):
         reply_markup=budget_menu()
     )
 
-# =========================
-# 💰 ДОХОД (ЧИСТО ОТДЕЛЕН)
-# =========================
-class IncomeState:
-    waiting_sum = "income_sum"
-
-@dp.callback_query(F.data == "income")
-async def income(c: CallbackQuery, state: FSMContext):
-    await state.set_state(IncomeState.waiting_sum)
-    await c.message.answer("Введите сумму дохода")
-
-@dp.message(F.text, IncomeState.waiting_sum)
-async def income_sum(m: Message, state: FSMContext):
-    amount = parse_amount(m.text)
-
-    if not amount:
-        await m.answer("❌ Не нашел сумму")
-        return
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=cat, callback_data=f"income_cat_{cat}")]
-        for cat in INCOME_CATEGORIES
-    ])
-
-    await state.update_data(amount=amount)
-
-    await m.answer(f"Доход: {amount} ₽\nВыбери категорию", reply_markup=kb)
-
-@dp.callback_query(F.data.startswith("income_cat_"))
-async def income_category(c: CallbackQuery, state: FSMContext):
-    cat = c.data.replace("income_cat_", "")
-    data = await state.get_data()
-
-    add_transaction(c.from_user.id, data["amount"], "income", cat)
-
-    await state.clear()
-    await c.message.answer(
-        f"💰 +{data['amount']} ₽ ({cat})",
-        reply_markup=budget_menu()
-    )
-
-# =========================
-# ИЗМЕНЕНИЕ КАТЕГОРИИ
-# =========================
 @dp.callback_query(F.data == "change_category")
 async def change_category(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_category)
@@ -197,12 +178,14 @@ async def custom_cat(m: Message, state: FSMContext):
 
     await state.update_data(category=m.text)
 
+    # --- ОБУЧЕНИЕ (НЕ ТРОГАЕМ, НО УЛУЧШИЛИ) ---
     text = data.get("original_text", "").lower()
     if text:
         words = text.split()
         if len(words) > 1:
             keyword = words[-1]
-            add_rule(m.from_user.id, keyword, m.text)
+            if len(keyword) > 3:  # FIX мусора
+                add_rule(m.from_user.id, keyword, m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_expense")],
@@ -214,7 +197,20 @@ async def custom_cat(m: Message, state: FSMContext):
         reply_markup=kb
     )
 
-# --- АНАЛИТИКА ---
+# =========================
+# ====== ДОХОД ============
+# =========================
+
+@dp.callback_query(F.data == "income")
+async def income(c: CallbackQuery, state: FSMContext):
+    await state.set_state(AddTransaction.waiting_sum)
+    await state.update_data(type="income")
+    await c.message.answer("Введите сумму дохода")
+
+# =========================
+# ===== АНАЛИТИКА =========
+# =========================
+
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
     data = get_stats(c.from_user.id)
