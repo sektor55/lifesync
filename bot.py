@@ -2,7 +2,7 @@ import asyncio
 import re
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 
 from config import TOKEN
@@ -13,7 +13,9 @@ from states import *
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- РАСХОД ---
+# =========================
+# РАСХОД (НЕ ТРОГАЕМ ЛОГИКУ)
+# =========================
 CATEGORIES = {
     "Еда": ["пятерочка","pyaterochka","магнит","magnit","ашан","auchan","еда","food","kfc","burger"],
     "Транспорт": ["такси","taxi","метро","автобус"],
@@ -22,7 +24,9 @@ CATEGORIES = {
     "Кредиты": ["кредит","loan"]
 }
 
-# --- ДОХОД (ОТДЕЛЬНО!) ---
+# =========================
+# ДОХОД (ОТДЕЛЬНО)
+# =========================
 INCOME_CATEGORIES = {
     "ЗП": ["зарплата","salary","работа","job","др банк"],
     "Перевод": ["перевод","transfer"],
@@ -30,6 +34,9 @@ INCOME_CATEGORIES = {
     "Инвестиции": ["дивиденды","инвестиции"],
 }
 
+# =========================
+# ОБЩЕЕ
+# =========================
 def parse_amount(text):
     text = text.replace(",", ".")
     matches = re.findall(r"(\d+[.\d]*)\s?(₽|RUB|rub)", text)
@@ -45,7 +52,7 @@ def parse_amount(text):
 
 
 # =========================
-# РАСХОД (ВОССТАНОВЛЕН)
+# РАСХОД
 # =========================
 def detect_category(text, user_id):
     text = text.lower().replace(".", " ").replace(",", " ")
@@ -76,7 +83,9 @@ def detect_income_category(text):
     return "Другое"
 
 
-# --- UI ---
+# =========================
+# КНОПКИ ПОДТВЕРЖДЕНИЯ
+# =========================
 def confirm_kb(prefix="exp"):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"{prefix}_confirm")],
@@ -84,14 +93,29 @@ def confirm_kb(prefix="exp"):
     ])
 
 
-# --- СТАРТ ---
+# =========================
+# СТАРТ
+# =========================
 @dp.message(CommandStart())
 async def start(m: Message):
     await m.answer("🚀 LifeSync", reply_markup=main_menu())
 
 
 # =========================
-# РАСХОД
+# МЕНЮ (ФИКС КНОПОК)
+# =========================
+@dp.callback_query(F.data == "budget")
+async def budget(c: CallbackQuery):
+    await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
+
+
+@dp.callback_query(F.data == "back_main")
+async def back_main(c: CallbackQuery):
+    await c.message.edit_text("Главное меню", reply_markup=main_menu())
+
+
+# =========================
+# РАСХОД (ИДЕАЛ)
 # =========================
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
@@ -111,8 +135,7 @@ async def expense_sum(m: Message, state: FSMContext):
     await state.update_data(
         amount=amount,
         category=category,
-        original_text=m.text,
-        type="expense"
+        original_text=m.text
     )
 
     await m.answer(
@@ -189,7 +212,7 @@ async def exp_custom(m: Message, state: FSMContext):
 
 
 # =========================
-# ДОХОД (НЕ ЛОМАЕТ РАСХОД)
+# ДОХОД (ОТДЕЛЬНО И БЕЗ КОНФЛИКТОВ)
 # =========================
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
@@ -197,25 +220,17 @@ async def income(c: CallbackQuery, state: FSMContext):
     await c.message.answer("Введите сумму дохода")
 
 
-@dp.message()
-async def income_router(m: Message, state: FSMContext):
-    current = await state.get_state()
-
-    if current != "income_sum":
-        return
-
+@dp.message(StateFilter("income_sum"))
+async def income_sum(m: Message, state: FSMContext):
     amount = parse_amount(m.text)
+
     if not amount:
         await m.answer("❌ Не нашел сумму")
         return
 
     category = detect_income_category(m.text)
 
-    await state.update_data(
-        amount=amount,
-        category=category,
-        type="income"
-    )
+    await state.update_data(amount=amount, category=category)
 
     await m.answer(
         f"Сумма: {amount} ₽\nКатегория: {category}",
@@ -252,9 +267,9 @@ async def inc_change(c: CallbackQuery):
 @dp.callback_query(F.data.startswith("inc_set_"))
 async def inc_set(c: CallbackQuery, state: FSMContext):
     cat = c.data.replace("inc_set_", "")
-    data = await state.get_data()
-
     await state.update_data(category=cat)
+
+    data = await state.get_data()
 
     await c.message.answer(
         f"Сумма: {data['amount']} ₽\nКатегория: {cat}",
@@ -268,11 +283,8 @@ async def inc_custom_start(c: CallbackQuery, state: FSMContext):
     await c.message.answer("Введи категорию")
 
 
-@dp.message()
+@dp.message(StateFilter("income_custom"))
 async def inc_custom(m: Message, state: FSMContext):
-    if await state.get_state() != "income_custom":
-        return
-
     data = await state.get_data()
     await state.update_data(category=m.text)
 
@@ -282,7 +294,9 @@ async def inc_custom(m: Message, state: FSMContext):
     )
 
 
-# --- АНАЛИТИКА ---
+# =========================
+# СТАТИСТИКА
+# =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
     data = get_stats(c.from_user.id)
@@ -297,6 +311,9 @@ async def stats(c: CallbackQuery):
     await c.message.answer(text, reply_markup=budget_menu())
 
 
+# =========================
+# СТАРТ БОТА
+# =========================
 async def main():
     await dp.start_polling(bot)
 
