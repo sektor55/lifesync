@@ -78,7 +78,9 @@ async def back(c: CallbackQuery):
 async def budget(c: CallbackQuery):
     await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
 
-# --- РАСХОД ---
+# =========================
+# 💸 РАСХОД (НЕ ТРОГАЕМ)
+# =========================
 @dp.callback_query(F.data == "expense")
 async def expense(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_sum)
@@ -118,6 +120,52 @@ async def confirm_expense(c: CallbackQuery, state: FSMContext):
         reply_markup=budget_menu()
     )
 
+# =========================
+# 💰 ДОХОД (НОВОЕ)
+# =========================
+@dp.callback_query(F.data == "income")
+async def income(c: CallbackQuery, state: FSMContext):
+    await state.set_state(AddTransaction.waiting_sum)
+    await c.message.answer("Введите сумму дохода")
+
+@dp.callback_query(F.data == "confirm_income")
+async def confirm_income(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    add_transaction(c.from_user.id, data["amount"], "income", "Доход")
+
+    await state.clear()
+    await c.message.answer(
+        f"💰 +{data['amount']} ₽",
+        reply_markup=budget_menu()
+    )
+
+# 🔥 перехватываем подтверждение для дохода
+@dp.message(AddTransaction.waiting_sum)
+async def get_income_or_expense(m: Message, state: FSMContext):
+    data = await state.get_data()
+
+    # если уже есть category → это расход (старый обработчик)
+    if "category" in data:
+        return
+
+    amount = parse_amount(m.text)
+
+    if not amount:
+        await m.answer("❌ Не нашел сумму")
+        return
+
+    await state.update_data(amount=amount)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_income")]
+    ])
+
+    await m.answer(f"Доход: {amount} ₽", reply_markup=kb)
+
+# =========================
+# ИЗМЕНЕНИЕ КАТЕГОРИИ
+# =========================
 @dp.callback_query(F.data == "change_category")
 async def change_category(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_category)
@@ -151,34 +199,12 @@ async def custom_cat(m: Message, state: FSMContext):
 
     await state.update_data(category=m.text)
 
-    # --- ОБУЧЕНИЕ (ИСПРАВЛЕНО) ---
+    # --- ОБУЧЕНИЕ ---
     text = data.get("original_text", "").lower()
     if text:
         words = text.split()
-
-        stop_words = [
-            "покупка", "карта", "баланс", "доступно",
-            "счет", "карты", "rub", "₽"
-        ]
-
-        clean_words = []
-
-        for w in words:
-            w = w.strip(".,:;()")
-
-            if w.isdigit():
-                continue
-            if any(char.isdigit() for char in w):
-                continue
-            if w in stop_words:
-                continue
-            if len(w) < 3:
-                continue
-
-            clean_words.append(w)
-
-        if clean_words:
-            keyword = max(clean_words, key=len)
+        if len(words) > 1:
+            keyword = words[-1]
             add_rule(m.from_user.id, keyword, m.text)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
