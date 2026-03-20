@@ -1,3 +1,4 @@
+from aiogram.types import FSInputFile
 import asyncio
 import re
 
@@ -366,7 +367,7 @@ async def graph_expense(c: CallbackQuery):
     plt.close()
 
     with open(file_name, "rb") as photo:
-        await c.message.answer_photo(photo)
+    await c.message.answer_photo(photo)
 
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
@@ -393,8 +394,8 @@ async def graph_expense(c: CallbackQuery):
     plt.savefig(file_name)
     plt.close()
 
-    with open(file_name, "rb") as photo:
-        await c.message.answer_photo(photo)
+photo = FSInputFile(file_name)
+await c.message.answer_photo(photo)
 
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
