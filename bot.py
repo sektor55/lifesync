@@ -1,4 +1,3 @@
-from aiogram.types import FSInputFile
 import asyncio
 import re
 
@@ -7,7 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 
@@ -366,7 +365,7 @@ async def graph_expense(c: CallbackQuery):
     plt.savefig(file_name)
     plt.close()
 
-    with open(file_name, "rb") as photo:
+    photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
 
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
@@ -375,9 +374,9 @@ async def graph_expense(c: CallbackQuery):
 # =========================
 # 💰 ГРАФИК ДОХОДОВ
 # =========================
-@dp.callback_query(F.data == "graph_expense")
-async def graph_expense(c: CallbackQuery):
-    data = get_expense_stats(c.from_user.id)
+@dp.callback_query(F.data == "graph_income")
+async def graph_income(c: CallbackQuery):
+    data = get_income_stats(c.from_user.id)
 
     if not data:
         await c.message.answer("Нет данных", reply_markup=budget_menu())
@@ -388,14 +387,14 @@ async def graph_expense(c: CallbackQuery):
 
     plt.figure()
     plt.pie(vals, labels=cats, autopct='%1.0f%%')
-    plt.title("Расходы")
+    plt.title("Доходы")
 
-    file_name = "expense.png"
+    file_name = "income.png"
     plt.savefig(file_name)
     plt.close()
 
-photo = FSInputFile(file_name)
-await c.message.answer_photo(photo)
+    photo = FSInputFile(file_name)
+    await c.message.answer_photo(photo)
 
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
