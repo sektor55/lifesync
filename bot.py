@@ -361,19 +361,22 @@ async def graph_expense(c: CallbackQuery):
     plt.pie(vals, labels=cats, autopct='%1.0f%%')
     plt.title("Расходы")
 
-    plt.savefig("expense.png")
+    file_name = "expense.png"
+    plt.savefig(file_name)
     plt.close()
 
-    await c.message.answer_photo(open("expense.png", "rb"))
+    with open(file_name, "rb") as photo:
+        await c.message.answer_photo(photo)
+
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
 
 # =========================
 # 💰 ГРАФИК ДОХОДОВ
 # =========================
-@dp.callback_query(F.data == "graph_income")
-async def graph_income(c: CallbackQuery):
-    data = get_income_stats(c.from_user.id)
+@dp.callback_query(F.data == "graph_expense")
+async def graph_expense(c: CallbackQuery):
+    data = get_expense_stats(c.from_user.id)
 
     if not data:
         await c.message.answer("Нет данных", reply_markup=budget_menu())
@@ -384,12 +387,15 @@ async def graph_income(c: CallbackQuery):
 
     plt.figure()
     plt.pie(vals, labels=cats, autopct='%1.0f%%')
-    plt.title("Доходы")
+    plt.title("Расходы")
 
-    plt.savefig("income.png")
+    file_name = "expense.png"
+    plt.savefig(file_name)
     plt.close()
 
-    await c.message.answer_photo(open("income.png", "rb"))
+    with open(file_name, "rb") as photo:
+        await c.message.answer_photo(photo)
+
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
 
