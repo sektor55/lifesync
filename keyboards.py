@@ -39,3 +39,11 @@ def family_menu():
         [InlineKeyboardButton(text="👥 Участники", callback_data="family_members")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
+
+# ✅ НОВОЕ (ТОЛЬКО ДОБАВИЛИ)
+def stats_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 График расходов", callback_data="graph_expense")],
+        [InlineKeyboardButton(text="📈 График доходов", callback_data="graph_income")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
+    ])

@@ -97,6 +97,14 @@ def confirm_kb(prefix="exp"):
         [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data=f"{prefix}_change")]
     ])
 
+# ✅ ДОБАВЛЕНО (новое меню статистики)
+def stats_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 График расходов", callback_data="graph_expense")],
+        [InlineKeyboardButton(text="💰 График доходов", callback_data="graph_income")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
+    ])
+
 
 # =========================
 # СТАРТ
@@ -191,7 +199,6 @@ async def exp_custom(m: Message, state: FSMContext):
     data = await state.get_data()
     await state.update_data(category=m.text)
 
-    # обучение (НЕ ТРОГАЕМ)
     text = data.get("original_text","").lower()
     words = text.split()
 
@@ -300,21 +307,19 @@ async def inc_custom(m: Message, state: FSMContext):
 
 
 # =========================
-# 📊 СТАТИСТИКА + ГРАФИК
+# 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
 # =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
     expense_data = get_expense_stats(c.from_user.id)
     income_data = get_income_stats(c.from_user.id)
 
-    # --- суммы ---
     total_expense = sum(x[1] for x in expense_data) if expense_data else 0
     total_income = sum(x[1] for x in income_data) if income_data else 0
     balance = total_income - total_expense
 
     text = "📊 Аналитика\n\n"
 
-    # --- ДОХОДЫ ---
     text += "💰 Доходы:\n"
     if income_data:
         for cat, val in income_data:
@@ -323,10 +328,7 @@ async def stats(c: CallbackQuery):
     else:
         text += "нет данных\n"
 
-    text += "\n"
-
-    # --- РАСХОДЫ ---
-    text += "💸 Расходы:\n"
+    text += "\n💸 Расходы:\n"
     if expense_data:
         for cat, val in expense_data:
             perc = int(val / total_expense * 100) if total_expense else 0
@@ -335,12 +337,60 @@ async def stats(c: CallbackQuery):
         text += "нет данных\n"
 
     text += "\n"
-
-    # --- ИТОГ ---
     text += f"📈 Баланс: {balance} ₽\n"
     text += f"Доход: {total_income} ₽ | Расход: {total_expense} ₽"
 
-    await c.message.answer(text, reply_markup=budget_menu())
+    await c.message.answer(text, reply_markup=stats_menu())
+
+
+# =========================
+# 📉 ГРАФИК РАСХОДОВ
+# =========================
+@dp.callback_query(F.data == "graph_expense")
+async def graph_expense(c: CallbackQuery):
+    data = get_expense_stats(c.from_user.id)
+
+    if not data:
+        await c.message.answer("Нет данных", reply_markup=budget_menu())
+        return
+
+    cats = [x[0] for x in data]
+    vals = [x[1] for x in data]
+
+    plt.figure()
+    plt.pie(vals, labels=cats, autopct='%1.0f%%')
+    plt.title("Расходы")
+
+    plt.savefig("expense.png")
+    plt.close()
+
+    await c.message.answer_photo(open("expense.png", "rb"))
+    await c.message.answer("📊 Готово", reply_markup=budget_menu())
+
+
+# =========================
+# 💰 ГРАФИК ДОХОДОВ
+# =========================
+@dp.callback_query(F.data == "graph_income")
+async def graph_income(c: CallbackQuery):
+    data = get_income_stats(c.from_user.id)
+
+    if not data:
+        await c.message.answer("Нет данных", reply_markup=budget_menu())
+        return
+
+    cats = [x[0] for x in data]
+    vals = [x[1] for x in data]
+
+    plt.figure()
+    plt.pie(vals, labels=cats, autopct='%1.0f%%')
+    plt.title("Доходы")
+
+    plt.savefig("income.png")
+    plt.close()
+
+    await c.message.answer_photo(open("income.png", "rb"))
+    await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
 
 # =========================
