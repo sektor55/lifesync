@@ -3,6 +3,32 @@ import sqlite3
 conn = sqlite3.connect("data.db")
 cur = conn.cursor()
 
+# =========================
+# HABITS UPDATE (ДОБАВЛЕНО)
+# =========================
+def init_habits_update():
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN type TEXT")
+    except:
+        pass
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN time TEXT")
+    except:
+        pass
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN task_type TEXT")
+    except:
+        pass
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN family_id TEXT")
+    except:
+        pass
+
+    conn.commit()
+
+init_habits_update()
+
+
 cur.execute("""CREATE TABLE IF NOT EXISTS transactions(
 user_id INTEGER,
 amount INTEGER,
@@ -70,3 +96,57 @@ def add_rule(uid, keyword, category):
 def get_rules(uid):
     cur.execute("SELECT keyword, category FROM rules WHERE user_id=?", (uid,))
     return cur.fetchall()
+
+
+# =========================
+# HABITS V2 (НОВОЕ)
+# =========================
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS habit_logs(
+habit_id INTEGER,
+user_id INTEGER,
+date TEXT,
+status TEXT
+)
+""")
+
+conn.commit()
+
+
+def add_habit(user_id, name, days, h_type, time, task_type, family_id=None):
+    cur.execute("""
+        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id)
+        VALUES(?,?,?,?,?,?,?)
+    """, (user_id, name, days, h_type, time, task_type, family_id))
+    conn.commit()
+
+
+def get_habits(user_id):
+    cur.execute("""
+        SELECT rowid, name, days, type, time, task_type
+        FROM habits
+        WHERE user_id=?
+    """, (user_id,))
+    return cur.fetchall()
+
+
+def add_habit_log(habit_id, user_id, date, status):
+    cur.execute("""
+        INSERT INTO habit_logs VALUES(?,?,?,?)
+    """, (habit_id, user_id, date, status))
+    conn.commit()
+
+
+def get_habit_logs(habit_id, user_id):
+    cur.execute("""
+        SELECT date, status FROM habit_logs
+        WHERE habit_id=? AND user_id=?
+    """, (habit_id, user_id))
+    return cur.fetchall()
+
+
+def delete_habit(habit_id):
+    cur.execute("DELETE FROM habits WHERE rowid=?", (habit_id,))
+    cur.execute("DELETE FROM habit_logs WHERE habit_id=?", (habit_id,))
+    conn.commit()

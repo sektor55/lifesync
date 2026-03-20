@@ -437,6 +437,130 @@ async def graph_income(c: CallbackQuery):
     photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
+    
+    # =========================
+# 🏋️ ПРИВЫЧКИ
+# =========================
+
+from datetime import datetime
+
+DAYS = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+
+
+@dp.callback_query(F.data == "habits")
+async def habits_menu_handler(c: CallbackQuery):
+    await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
+
+
+@dp.callback_query(F.data == "habit_add")
+async def habit_add_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(AddHabit.name)
+    await c.message.answer("Введите название привычки")
+
+
+@dp.message(AddHabit.name)
+async def habit_name(m: Message, state: FSMContext):
+    await state.update_data(name=m.text)
+    await state.set_state(AddHabit.type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Личная", callback_data="habit_type_personal")],
+        [InlineKeyboardButton(text="👥 Общая", callback_data="habit_type_family")]
+    ])
+
+    await m.answer("Выбери тип", reply_markup=kb)
+
+
+@dp.callback_query(AddHabit.type, F.data.startswith("habit_type"))
+async def habit_type(c: CallbackQuery, state: FSMContext):
+    h_type = "personal" if "personal" in c.data else "family"
+    await state.update_data(type=h_type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=d, callback_data=f"day_{d}") for d in DAYS],
+        [InlineKeyboardButton(text="Готово", callback_data="days_done")]
+    ])
+
+    await state.update_data(days=[])
+    await state.set_state(AddHabit.days)
+    await c.message.answer("Выбери дни", reply_markup=kb)
+
+
+@dp.callback_query(AddHabit.days, F.data.startswith("day_"))
+async def toggle_days(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    days = data.get("days", [])
+
+    d = c.data.replace("day_", "")
+
+    if d in days:
+        days.remove(d)
+    else:
+        days.append(d)
+
+    await state.update_data(days=days)
+    await c.answer(f"Выбрано: {', '.join(days)}")
+
+
+@dp.callback_query(AddHabit.days, F.data == "days_done")
+async def days_done(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    if not data.get("days"):
+        await c.answer("Выбери хотя бы 1 день", show_alert=True)
+        return
+
+    await state.set_state(AddHabit.time)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пропустить", callback_data="skip_time")]
+    ])
+
+    await c.message.answer("Введи время или пропусти", reply_markup=kb)
+
+
+@dp.callback_query(AddHabit.time, F.data == "skip_time")
+async def skip_time(c: CallbackQuery, state: FSMContext):
+    await state.update_data(time=None)
+    await state.set_state(AddHabit.task_type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Цикличная", callback_data="task_cycle")],
+        [InlineKeyboardButton(text="🎯 Разовая", callback_data="task_once")]
+    ])
+
+    await c.message.answer("Тип задачи", reply_markup=kb)
+
+
+@dp.message(AddHabit.time)
+async def set_time(m: Message, state: FSMContext):
+    await state.update_data(time=m.text)
+    await state.set_state(AddHabit.task_type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Цикличная", callback_data="task_cycle")],
+        [InlineKeyboardButton(text="🎯 Разовая", callback_data="task_once")]
+    ])
+
+    await m.answer("Тип задачи", reply_markup=kb)
+
+
+@dp.callback_query(AddHabit.task_type)
+async def set_task_type(c: CallbackQuery, state: FSMContext):
+    task_type = "cycle" if "cycle" in c.data else "once"
+    data = await state.get_data()
+
+    add_habit(
+        user_id=c.from_user.id,
+        name=data["name"],
+        days=",".join(data["days"]),
+        h_type=data["type"],
+        time=data.get("time"),
+        task_type=task_type
+    )
+
+    await state.clear()
+    await c.message.answer("✅ Привычка добавлена", reply_markup=habits_menu())
 
 
 # =========================

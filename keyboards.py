@@ -29,6 +29,7 @@ def habits_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить", callback_data="habit_add")],
         [InlineKeyboardButton(text="📋 Мои", callback_data="habit_list")],
+        [InlineKeyboardButton(text="📊 Прогресс", callback_data="habit_progress")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 

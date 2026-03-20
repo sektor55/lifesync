@@ -10,6 +10,7 @@ class AddHabit(StatesGroup):
     type = State()
     days = State()
     time = State()
+    task_type = State()  # ✅ ДОБАВЛЕНО
 
 class Family(StatesGroup):
     create_password = State()
