@@ -357,17 +357,37 @@ async def graph_expense(c: CallbackQuery):
     cats = [x[0] for x in data]
     vals = [x[1] for x in data]
 
-    plt.figure()
-    plt.pie(vals, labels=cats, autopct='%1.0f%%')
-    plt.title("Расходы")
+    total = sum(vals)
+
+    def autopct(pct):
+        val = int(pct * total / 100)
+        return f"{val} ₽\n({int(pct)}%)"
+
+    plt.figure(figsize=(7, 7), facecolor="#1e1e2f")
+
+    colors = ["#00c896", "#ff6b6b", "#4dabf7", "#ffd43b", "#845ef7"]
+
+    wedges, texts, autotexts = plt.pie(
+        vals,
+        labels=cats,
+        autopct=autopct,
+        startangle=140,
+        colors=colors,
+        textprops={"color": "white", "fontsize": 14},
+        wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
+    )
+
+    plt.setp(autotexts, size=14, weight="bold", color="white")
+    plt.setp(texts, size=16, weight="bold")
+
+    plt.title("💸 Расходы", fontsize=20, color="white", pad=20)
 
     file_name = "expense.png"
-    plt.savefig(file_name)
+    plt.savefig(file_name, facecolor="#1e1e2f")
     plt.close()
 
     photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
-
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
 
@@ -385,17 +405,37 @@ async def graph_income(c: CallbackQuery):
     cats = [x[0] for x in data]
     vals = [x[1] for x in data]
 
-    plt.figure()
-    plt.pie(vals, labels=cats, autopct='%1.0f%%')
-    plt.title("Доходы")
+    total = sum(vals)
+
+    def autopct(pct):
+        val = int(pct * total / 100)
+        return f"{val} ₽\n({int(pct)}%)"
+
+    plt.figure(figsize=(7, 7), facecolor="#1e1e2f")
+
+    colors = ["#51cf66", "#339af0", "#fcc419", "#ff922b", "#f06595"]
+
+    wedges, texts, autotexts = plt.pie(
+        vals,
+        labels=cats,
+        autopct=autopct,
+        startangle=140,
+        colors=colors,
+        textprops={"color": "white", "fontsize": 14},
+        wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
+    )
+
+    plt.setp(autotexts, size=14, weight="bold", color="white")
+    plt.setp(texts, size=16, weight="bold")
+
+    plt.title("💰 Доходы", fontsize=20, color="white", pad=20)
 
     file_name = "income.png"
-    plt.savefig(file_name)
+    plt.savefig(file_name, facecolor="#1e1e2f")
     plt.close()
 
     photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
-
     await c.message.answer("📊 Готово", reply_markup=budget_menu())
 
 
