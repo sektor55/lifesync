@@ -823,12 +823,15 @@ async def habit_progress(c: CallbackQuery):
 async def habit_done(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
 
-    add_habit_log(hid, c.from_user.id, "done")
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    text, kb = await render_habits(c.from_user.id)
+    add_habit_log(hid, c.from_user.id, today, "done")
 
-    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await c.answer("✅ Выполнено")
+
+    await c.message.delete()
+    await habit_list(c)
 
 
 
@@ -836,24 +839,27 @@ async def habit_done(c: CallbackQuery):
 async def habit_skip(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
 
-    add_habit_log(hid, c.from_user.id, "skip")
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    text, kb = await render_habits(c.from_user.id)
+    add_habit_log(hid, c.from_user.id, today, "skip")
 
-    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await c.answer("❌ Пропущено")
+
+    await c.message.delete()
+    await habit_list(c)
 
 
 @dp.callback_query(F.data.startswith("del_"))
 async def habit_delete(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
 
-    delete_habit(hid, c.from_user.id)
+    delete_habit(hid)
 
-    text, kb = await render_habits(c.from_user.id)
-
-    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await c.answer("🗑 Удалено")
+
+    await c.message.delete()
+    await habit_list(c)
     
 
 
