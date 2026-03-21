@@ -476,11 +476,18 @@ def get_days_kb(selected):
     row = []
 
     for d in DAYS:
-        text = f"[{d}] 🟢" if d in selected else d
-        row.append(InlineKeyboardButton(text=text, callback_data=f"day_{d}"))
+        if d in selected:
+            text = f"{d} 🟢"
+        else:
+            text = d
+
+        row.append(InlineKeyboardButton(
+            text=text,
+            callback_data=f"day_{d}"
+        ))
 
     kb.append(row)
-    kb.append([InlineKeyboardButton(text="Готово", callback_data="days_done")])
+    kb.append([InlineKeyboardButton(text="✅ Готово", callback_data="days_done")])
 
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -680,7 +687,7 @@ async def habit_list(c: CallbackQuery):
         await c.message.edit_text("Нет привычек", reply_markup=habits_menu())
         return
 
-    text = "📋 Мои привычки\n\n"
+    text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
 
     for h in habits:
@@ -690,11 +697,24 @@ async def habit_list(c: CallbackQuery):
         logs = get_habit_logs(hid, c.from_user.id)
 
         done = sum(1 for l in logs if l[1] == "done")
+        skip = sum(1 for l in logs if l[1] == "skip")
 
-        bar = "🟩" * done + "⬜" * (len(days_list) - done)
+        total = len(days_list)
+
+        bar = (
+            "🟩" * done +
+            "🟥" * skip +
+            "⬜" * (total - done - skip)
+        )
+
         labels = " ".join(days_list)
 
-        text += f"{name}\n{labels}\n{bar}\n\n"
+        text += (
+            f"🔹 <b>{name}</b>\n"
+            f"📅 {labels}\n"
+            f"{bar}\n"
+            f"────────────\n"
+        )
 
         kb.append([
             InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
@@ -702,7 +722,11 @@ async def habit_list(c: CallbackQuery):
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
-    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await c.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="HTML"
+    )
     
 @dp.callback_query(F.data.startswith("open_"))
 async def open_habit(c: CallbackQuery):
@@ -729,23 +753,54 @@ async def habit_progress(c: CallbackQuery):
         await c.message.edit_text("Нет данных", reply_markup=habits_menu())
         return
 
-    text = "📊 Прогресс\n\n"
+    personal = []
+    family = []
 
     for h in habits:
-        hid, name, days, *_ = h
+        if h[3] == "personal":
+            personal.append(h)
+        else:
+            family.append(h)
 
-        days_list = days.split(",")
-        logs = get_habit_logs(hid, c.from_user.id)
+    def build_block(title, items):
+        text = f"\n<b>{title}</b>\n\n"
 
-        done = sum(1 for l in logs if l[1] == "done")
+        for h in items:
+            hid, name, days, *_ = h
 
-        bar = "🟩" * done + "⬜" * (len(days_list) - done)
+            days_list = days.split(",")
+            logs = get_habit_logs(hid, c.from_user.id)
 
-        labels = " ".join(days_list)
+            done = sum(1 for l in logs if l[1] == "done")
+            skip = sum(1 for l in logs if l[1] == "skip")
 
-        text += f"{name}\n{labels}\n{bar}\n\n"
+            total = len(days_list)
 
-    await c.message.edit_text(text, reply_markup=habits_menu())
+            bar = (
+                "🟩" * done +
+                "🟥" * skip +
+                "⬜" * (total - done - skip)
+            )
+
+            labels = " ".join(days_list)
+
+            text += f"{name}\n{labels}\n{bar}\n\n"
+
+        return text
+
+    text = "📊 <b>Прогресс</b>\n"
+
+    if personal:
+        text += build_block("👤 Личные", personal)
+
+    if family:
+        text += build_block("👥 Общие", family)
+
+    await c.message.edit_text(
+        text,
+        reply_markup=habits_menu(),
+        parse_mode="HTML"
+    )
 
 
 # -------------------------
@@ -758,6 +813,7 @@ async def habit_done(c: CallbackQuery):
     add_habit_log(hid, c.from_user.id, "done")
     await c.answer("Отмечено ✅")
     await habit_list(c)
+    await c.answer()
 
 
 
@@ -777,6 +833,7 @@ async def habit_delete(c: CallbackQuery):
 
     await c.answer("Удалено 🗑")
     await habit_list(c)
+    await c.answer()
     
 
 
