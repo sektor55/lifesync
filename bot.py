@@ -679,13 +679,12 @@ async def set_task_type(c: CallbackQuery, state: FSMContext):
 # -------------------------
 # МОИ ПРИВЫЧКИ
 # -------------------------
-@dp.callback_query(F.data == "habit_list")
-async def habit_list(c: CallbackQuery):
-    habits = get_habits(c.from_user.id)
+
+async def render_habits(user_id):
+    habits = get_habits(user_id)
 
     if not habits:
-        await c.message.edit_text("Нет привычек", reply_markup=habits_menu())
-        return
+        return "Нет привычек", habits_menu()
 
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
@@ -694,7 +693,7 @@ async def habit_list(c: CallbackQuery):
         hid, name, days, *_ = h
 
         days_list = days.split(",")
-        logs = get_habit_logs(hid, c.from_user.id)
+        logs = get_habit_logs(hid, user_id)
 
         done = sum(1 for l in logs if l[1] == "done")
         skip = sum(1 for l in logs if l[1] == "skip")
@@ -722,9 +721,15 @@ async def habit_list(c: CallbackQuery):
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
+    return text, InlineKeyboardMarkup(inline_keyboard=kb)
+
+@dp.callback_query(F.data == "habit_list")
+async def habit_list(c: CallbackQuery):
+    text, kb = await render_habits(c.from_user.id)
+
     await c.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        reply_markup=kb,
         parse_mode="HTML"
     )
     
@@ -820,10 +825,10 @@ async def habit_done(c: CallbackQuery):
 
     add_habit_log(hid, c.from_user.id, "done")
 
-    await c.answer("✅ Выполнено")
+    text, kb = await render_habits(c.from_user.id)
 
-    await c.message.delete()
-    await habit_list(c)
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer("✅ Выполнено")
 
 
 
@@ -833,10 +838,10 @@ async def habit_skip(c: CallbackQuery):
 
     add_habit_log(hid, c.from_user.id, "skip")
 
-    await c.answer("❌ Пропущено")
+    text, kb = await render_habits(c.from_user.id)
 
-    await c.message.delete()
-    await habit_list(c)
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer("❌ Пропущено")
 
 
 @dp.callback_query(F.data.startswith("del_"))
@@ -845,10 +850,10 @@ async def habit_delete(c: CallbackQuery):
 
     delete_habit(hid, c.from_user.id)
 
-    await c.answer("🗑 Удалено")
+    text, kb = await render_habits(c.from_user.id)
 
-    await c.message.delete()
-    await habit_list(c)
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer("🗑 Удалено")
     
 
 
