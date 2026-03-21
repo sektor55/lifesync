@@ -476,7 +476,7 @@ def get_days_kb(selected):
     row = []
 
     for d in DAYS:
-        text = f"🟢 {d}" if d in selected else d
+        text = f"{d} 🟢" if d in selected else d
         row.append(InlineKeyboardButton(text=text, callback_data=f"day_{d}"))
 
     kb.append(row)
@@ -519,24 +519,44 @@ async def toggle_days(c: CallbackQuery, state: FSMContext):
 
 def get_hours_kb():
     kb = []
-    for i in range(0, 24, 6):
-        row = []
-        for j in range(6):
-            h = i + j
-            row.append(InlineKeyboardButton(text=f"{h:02d}", callback_data=f"hour_{h:02d}"))
-        kb.append(row)
+    row = []
+
+    for h in range(1, 24):
+        row.append(InlineKeyboardButton(text=f"{h:02d}", callback_data=f"hour_{h:02d}"))
+        if len(row) == 6:
+            kb.append(row)
+            row = []
+
+    row.append(InlineKeyboardButton(text="00", callback_data="hour_00"))
+    kb.append(row)
 
     kb.append([InlineKeyboardButton(text="Пропустить", callback_data="skip_time")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def get_minutes_kb(hour):
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="00", callback_data=f"min_{hour}_00"),
-        InlineKeyboardButton(text="15", callback_data=f"min_{hour}_15"),
-        InlineKeyboardButton(text="30", callback_data=f"min_{hour}_30"),
-        InlineKeyboardButton(text="45", callback_data=f"min_{hour}_45"),
-    ]])
+    kb = []
+    row = []
+
+    for m in range(0, 60, 5):
+        label = f"{m:02d}"
+
+        if m % 15 == 0:
+            label = f"🔥{label}"
+
+        row.append(InlineKeyboardButton(
+            text=label,
+            callback_data=f"min_{hour}_{m:02d}"
+        ))
+
+        if len(row) == 6:
+            kb.append(row)
+            row = []
+
+    if row:
+        kb.append(row)
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 @dp.callback_query(AddHabit.days, F.data == "days_done")
@@ -623,10 +643,12 @@ async def set_task_type(c: CallbackQuery, state: FSMContext):
     task_type = "cycle" if "cycle" in c.data else "once"
     data = await state.get_data()
 
+    sorted_days = [d for d in DAYS if d in data["days"]]
+
     add_habit(
         user_id=c.from_user.id,
         name=data["name"],
-        days=",".join(data["days"]),
+        days=",".join(sorted_days),
         h_type=data["type"],
         time=data.get("time"),
         task_type=task_type
@@ -656,13 +678,19 @@ async def habit_list(c: CallbackQuery):
     for h in habits:
         hid, name, days, *_ = h
 
-        text += f"{name} ({days})\n"
+        days_list = days.split(",")
+        logs = get_habit_logs(hid, c.from_user.id)
 
-        kb.append([
-            InlineKeyboardButton(text="✅", callback_data=f"done_{hid}"),
-            InlineKeyboardButton(text="❌", callback_data=f"skip_{hid}"),
-            InlineKeyboardButton(text="🗑", callback_data=f"del_{hid}")
-        ])
+        done = sum(1 for l in logs if l[1] == "done")
+
+        bar = "🟩" * done + "⬜" * (len(days_list) - done)
+
+        text += f"{name}\n{bar}\n\n"
+
+        kb.append([InlineKeyboardButton(text=f"✅ {name}", callback_data=f"done_{hid}")])
+        kb.append([InlineKeyboardButton(text=f"❌ {name}", callback_data=f"skip_{hid}")])
+        kb.append([InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"del_{hid}")])
+        
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
@@ -703,6 +731,7 @@ async def habit_done(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
     add_habit_log(hid, c.from_user.id, "done")
     await c.answer("Отмечено ✅")
+    await habit_list(c)
 
 
 @dp.callback_query(F.data.startswith("skip_"))
@@ -710,13 +739,16 @@ async def habit_skip(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
     add_habit_log(hid, c.from_user.id, "skip")
     await c.answer("Пропущено ❌")
+    await habit_list(c)
 
 
 @dp.callback_query(F.data.startswith("del_"))
 async def habit_delete(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
     delete_habit(hid, c.from_user.id)
+
     await c.answer("Удалено 🗑")
+    await habit_list(c)
 
     await c.message.edit_text(
         "🏋️ Привычки",
