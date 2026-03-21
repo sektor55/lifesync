@@ -471,19 +471,31 @@ async def habit_name(m: Message, state: FSMContext):
     await m.answer("Выбери тип", reply_markup=kb)
 
 
+def get_days_kb(selected):
+    kb = []
+    row = []
+
+    for d in DAYS:
+        text = f"🟢 {d}" if d in selected else d
+        row.append(InlineKeyboardButton(text=text, callback_data=f"day_{d}"))
+
+    kb.append(row)
+    kb.append([InlineKeyboardButton(text="Готово", callback_data="days_done")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
 @dp.callback_query(AddHabit.type, F.data.startswith("habit_type"))
 async def habit_type(c: CallbackQuery, state: FSMContext):
     h_type = "personal" if "personal" in c.data else "family"
-    await state.update_data(type=h_type)
+    await state.update_data(type=h_type, days=[])
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=d, callback_data=f"day_{d}") for d in DAYS],
-        [InlineKeyboardButton(text="Готово", callback_data="days_done")]
-    ])
-
-    await state.update_data(days=[])
     await state.set_state(AddHabit.days)
-    await c.message.answer("Выбери дни", reply_markup=kb)
+
+    await c.message.edit_text(
+        "Выбери дни",
+        reply_markup=get_days_kb([])
+    )
 
 
 @dp.callback_query(AddHabit.days, F.data.startswith("day_"))
@@ -499,7 +511,32 @@ async def toggle_days(c: CallbackQuery, state: FSMContext):
         days.append(d)
 
     await state.update_data(days=days)
-    await c.answer(f"Выбрано: {', '.join(days)}")
+
+    await c.message.edit_reply_markup(
+        reply_markup=get_days_kb(days)
+    )
+
+
+def get_hours_kb():
+    kb = []
+    for i in range(0, 24, 6):
+        row = []
+        for j in range(6):
+            h = i + j
+            row.append(InlineKeyboardButton(text=f"{h:02d}", callback_data=f"hour_{h:02d}"))
+        kb.append(row)
+
+    kb.append([InlineKeyboardButton(text="Пропустить", callback_data="skip_time")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def get_minutes_kb(hour):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="00", callback_data=f"min_{hour}_00"),
+        InlineKeyboardButton(text="15", callback_data=f"min_{hour}_15"),
+        InlineKeyboardButton(text="30", callback_data=f"min_{hour}_30"),
+        InlineKeyboardButton(text="45", callback_data=f"min_{hour}_45"),
+    ]])
 
 
 @dp.callback_query(AddHabit.days, F.data == "days_done")
@@ -512,11 +549,20 @@ async def days_done(c: CallbackQuery, state: FSMContext):
 
     await state.set_state(AddHabit.time)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пропустить", callback_data="skip_time")]
-    ])
+    await c.message.edit_text(
+        "Выбери час",
+        reply_markup=get_hours_kb()
+    )
 
-    await c.message.answer("Введи время или пропусти", reply_markup=kb)
+
+@dp.callback_query(AddHabit.time, F.data.startswith("hour_"))
+async def select_hour(c: CallbackQuery, state: FSMContext):
+    hour = c.data.split("_")[1]
+
+    await c.message.edit_text(
+        "Выбери минуты",
+        reply_markup=get_minutes_kb(hour)
+    )
 
 
 @dp.callback_query(AddHabit.time, F.data == "skip_time")
@@ -529,11 +575,38 @@ async def skip_time(c: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🎯 Разовая", callback_data="task_once")]
     ])
 
-    await c.message.answer("Тип задачи", reply_markup=kb)
+    await c.message.edit_text("Тип задачи", reply_markup=kb)
+    
+    
+
+
+@dp.callback_query(AddHabit.time, F.data.startswith("min_"))
+async def select_minute(c: CallbackQuery, state: FSMContext):
+    _, hour, minute = c.data.split("_")
+    time = f"{hour}:{minute}"
+
+    await state.update_data(time=time)
+    await state.set_state(AddHabit.task_type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Цикличная", callback_data="task_cycle")],
+        [InlineKeyboardButton(text="🎯 Разовая", callback_data="task_once")]
+    ])
+
+    await c.message.edit_text("Тип задачи", reply_markup=kb)
+    
+    
 
 
 @dp.message(AddHabit.time)
 async def set_time(m: Message, state: FSMContext):
+
+    
+
+    if not re.match(r"^\d{2}:\d{2}$", m.text):
+        await m.answer("Формат времени: 12:30")
+        return
+
     await state.update_data(time=m.text)
     await state.set_state(AddHabit.task_type)
 
@@ -560,7 +633,95 @@ async def set_task_type(c: CallbackQuery, state: FSMContext):
     )
 
     await state.clear()
-    await c.message.answer("✅ Привычка добавлена", reply_markup=habits_menu())
+
+    await c.message.edit_text(
+        "🏋️ Привычки",
+        reply_markup=habits_menu()
+    )
+
+# -------------------------
+# МОИ ПРИВЫЧКИ
+# -------------------------
+@dp.callback_query(F.data == "habit_list")
+async def habit_list(c: CallbackQuery):
+    habits = get_habits(c.from_user.id)
+
+    if not habits:
+        await c.message.edit_text("Нет привычек", reply_markup=habits_menu())
+        return
+
+    text = "📋 Мои привычки\n\n"
+    kb = []
+
+    for h in habits:
+        hid, name, days, *_ = h
+
+        text += f"{name} ({days})\n"
+
+        kb.append([
+            InlineKeyboardButton(text="✅", callback_data=f"done_{hid}"),
+            InlineKeyboardButton(text="❌", callback_data=f"skip_{hid}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_{hid}")
+        ])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
+
+    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+# -------------------------
+# ПРОГРЕСС
+# -------------------------
+@dp.callback_query(F.data == "habit_progress")
+async def habit_progress(c: CallbackQuery):
+    habits = get_habits(c.from_user.id)
+
+    if not habits:
+        await c.message.edit_text("Нет данных", reply_markup=habits_menu())
+        return
+
+    text = "📊 Прогресс\n\n"
+
+    for h in habits:
+        hid, name, *_ = h
+        logs = get_habit_logs(hid, c.from_user.id)
+
+        done = sum(1 for l in logs if l[1] == "done")
+
+        text += f"{name}\n"
+        text += f"{'🟩'*done}{'⬜'*(7-done)}\n\n"
+
+        await c.message.edit_text(text, reply_markup=habits_menu())
+
+
+# -------------------------
+# ACTIONS (done / skip / delete)
+# -------------------------
+
+@dp.callback_query(F.data.startswith("done_"))
+async def habit_done(c: CallbackQuery):
+    hid = int(c.data.split("_")[1])
+    add_habit_log(hid, c.from_user.id, "done")
+    await c.answer("Отмечено ✅")
+
+
+@dp.callback_query(F.data.startswith("skip_"))
+async def habit_skip(c: CallbackQuery):
+    hid = int(c.data.split("_")[1])
+    add_habit_log(hid, c.from_user.id, "skip")
+    await c.answer("Пропущено ❌")
+
+
+@dp.callback_query(F.data.startswith("del_"))
+async def habit_delete(c: CallbackQuery):
+    hid = int(c.data.split("_")[1])
+    delete_habit(hid, c.from_user.id)
+    await c.answer("Удалено 🗑")
+
+    await c.message.edit_text(
+        "🏋️ Привычки",
+        reply_markup=habits_menu()
+    )
 
 
 # =========================
