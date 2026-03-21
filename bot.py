@@ -710,9 +710,9 @@ async def habit_list(c: CallbackQuery):
         labels = " ".join(days_list)
 
         text += (
-            f"🔹 <b>{name}</b>\n"
-            f"📅 {labels}\n"
-            f"{bar}\n"
+            f"🔹 <b><i>{name}</i></b>\n"
+            f"<code>{labels}</code>\n"
+            f"<code>{bar}</code>\n"
             f"────────────\n"
         )
 
@@ -762,8 +762,11 @@ async def habit_progress(c: CallbackQuery):
         else:
             family.append(h)
 
-    def build_block(title, items):
-        text = f"\n<b>{title}</b>\n\n"
+    def build_block(items, is_family=False):
+        if is_family:
+            text = "\n────────────\n👥 <b>Общие</b>\n\n"
+        else:
+            text = f"\n👤 <b>Личные</b>\n\n"
 
         for h in items:
             hid, name, days, *_ = h
@@ -784,17 +787,21 @@ async def habit_progress(c: CallbackQuery):
 
             labels = " ".join(days_list)
 
-            text += f"{name}\n{labels}\n{bar}\n\n"
+            text += (
+                f"<b>{name}</b>\n"
+                f"<code>{labels}</code>\n"
+                f"<code>{bar}</code>\n\n"
+            )
 
         return text
 
     text = "📊 <b>Прогресс</b>\n"
 
     if personal:
-        text += build_block("👤 Личные", personal)
+        text += build_block(personal)
 
     if family:
-        text += build_block("👥 Общие", family)
+        text += build_block(family, is_family=True)
 
     await c.message.edit_text(
         text,
@@ -810,30 +817,38 @@ async def habit_progress(c: CallbackQuery):
 @dp.callback_query(F.data.startswith("done_"))
 async def habit_done(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
+
     add_habit_log(hid, c.from_user.id, "done")
-    await c.answer("Отмечено ✅")
+
+    await c.answer("✅ Выполнено")
+
+    await c.message.delete()
     await habit_list(c)
-    await c.answer()
 
 
 
 @dp.callback_query(F.data.startswith("skip_"))
 async def habit_skip(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
+
     add_habit_log(hid, c.from_user.id, "skip")
-    await c.answer("Пропущено ❌")
+
+    await c.answer("❌ Пропущено")
+
+    await c.message.delete()
     await habit_list(c)
-    await c.answer()
 
 
 @dp.callback_query(F.data.startswith("del_"))
 async def habit_delete(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
+
     delete_habit(hid, c.from_user.id)
 
-    await c.answer("Удалено 🗑")
+    await c.answer("🗑 Удалено")
+
+    await c.message.delete()
     await habit_list(c)
-    await c.answer()
     
 
 
