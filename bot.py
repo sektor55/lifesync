@@ -698,32 +698,39 @@ async def render_habits(user_id):
         days_list = days.split(",")
         logs = get_habit_logs(hid, user_id)
 
-        # 👉 делаем словарь: дата -> статус
-        log_map = {l[0]: l[1] for l in logs}
+        log_map = {}
+        for l in logs:
+            log_map[l[0]] = l[1]
 
         bar = ""
 
         for d in days_list:
-            # если есть лог за сегодня
-            if today in log_map:
-                if log_map[today] == "done":
+            key = today + "_" + d
+
+            if key in log_map:
+                if log_map[key] == "done":
                     bar += "🟩"
-                elif log_map[today] == "skip":
+                elif log_map[key] == "skip":
                     bar += "🟥"
             else:
                 bar += "⬜"
 
         labels = " ".join(days_list)
 
+        # 👉 время
+        title = name
+        if time:
+            title = f"{name} ({time})"
+
         text += (
-            f"🔹 <b><i>{name}</i></b>\n"
+            f"🔹 <b><i>{title}</i></b>\n"
             f"<code>{labels}</code>\n"
             f"<code>{bar}</code>\n"
             f"────────────\n"
         )
 
-        # ❗ если задача разовая и уже выполнена — НЕ показываем
-        if not (task_type == "once" and today in log_map):
+        # 👉 скрываем если полностью выполнена
+        if "⬜" in bar:
             kb.append([
                 InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
             ])
@@ -746,85 +753,45 @@ async def habit_list(c: CallbackQuery):
 async def open_habit(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
 
+    habits = get_habits(c.from_user.id)
+    habit = next((h for h in habits if h[0] == hid), None)
+
+    if not habit:
+        return
+
+    days = habit[2].split(",")
+
+    kb = []
+
+    # 👉 кнопки дней
+    for d in days:
+        kb.append([
+            InlineKeyboardButton(text=d, callback_data=f"daypick_{hid}_{d}")
+        ])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")])
+
+    await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("daypick_"))
+async def pick_day(c: CallbackQuery):
+    _, hid, day = c.data.split("_")
+    hid = int(hid)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Выполнено", callback_data=f"done_{hid}")],
-        [InlineKeyboardButton(text="❌ Пропустить", callback_data=f"skip_{hid}")],
+        [InlineKeyboardButton(text="✅ Выполнено", callback_data=f"done_{hid}_{day}")],
+        [InlineKeyboardButton(text="❌ Пропустить", callback_data=f"skip_{hid}_{day}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"del_{hid}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")]
     ])
 
-    await c.message.edit_text("Действие:", reply_markup=kb)
-
-
+    await c.message.edit_text(f"День: {day}", reply_markup=kb)
 # -------------------------
 # ПРОГРЕСС
 # -------------------------
 @dp.callback_query(F.data == "habit_progress")
 async def habit_progress(c: CallbackQuery):
-    habits = get_habits(c.from_user.id)
-
-    if not habits:
-        await c.message.edit_text("Нет данных", reply_markup=habits_menu())
-        return
-
-    personal = []
-    family = []
-
-    for h in habits:
-        if h[3] == "personal":
-            personal.append(h)
-        else:
-            family.append(h)
-
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    def build_block(items, title):
-        text = f"\n{title}\n\n"
-
-        for h in items:
-            hid, name, days, *_ = h
-
-            days_list = days.split(",")
-            logs = get_habit_logs(hid, c.from_user.id)
-
-            log_map = {l[0]: l[1] for l in logs}
-
-            bar = ""
-
-            for d in days_list:
-                if today in log_map:
-                    if log_map[today] == "done":
-                        bar += "🟩"
-                    elif log_map[today] == "skip":
-                        bar += "🟥"
-                else:
-                    bar += "⬜"
-
-            labels = " ".join(days_list)
-
-            text += (
-                f"🔹 <b><i>{name}</i></b>\n"
-                f"<code>{labels}</code>\n"
-                f"<code>{bar}</code>\n"
-                f"────────────\n"
-            )
-
-        return text
-
-    text = "📊 <b>Прогресс</b>\n"
-
-    if personal:
-        text += build_block(personal, "👤 <b>Личные</b>")
-
-    if family:
-        text += build_block(family, "👥 <b>Общие</b>")
-
-    await c.message.edit_text(
-        text,
-        reply_markup=habits_menu(),
-        parse_mode="HTML"
-    )
+    await show_progress(c, mode="personal")
 
 
 # -------------------------
@@ -833,27 +800,121 @@ async def habit_progress(c: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("done_"))
 async def habit_done(c: CallbackQuery):
-    hid = int(c.data.split("_")[1])
+    _, hid, day = c.data.split("_")
+    hid = int(hid)
 
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
 
-    add_habit_log(hid, c.from_user.id, today, "done")
+    add_habit_log(hid, c.from_user.id, today + "_" + day, "done")
 
     await c.answer("✅ Выполнено")
 
     await habit_list(c)
 
-
-
-@dp.callback_query(F.data.startswith("skip_"))
-async def habit_skip(c: CallbackQuery):
-    hid = int(c.data.split("_")[1])
+async def show_progress(c: CallbackQuery, mode="personal"):
+    habits = get_habits(c.from_user.id)
 
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
 
-    add_habit_log(hid, c.from_user.id, today, "skip")
+    active = []
+    history = []
+
+    for h in habits:
+        hid, name, days, h_type, time, task_type = h
+
+        if mode == "personal" and h_type != "personal":
+            continue
+        if mode == "family" and h_type != "family":
+            continue
+
+        days_list = days.split(",")
+        logs = get_habit_logs(hid, c.from_user.id)
+
+        log_map = {l[0]: l[1] for l in logs}
+
+        bar = ""
+
+        for d in days_list:
+            key = today + "_" + d
+
+            if key in log_map:
+                if log_map[key] == "done":
+                    bar += "🟩"
+                elif log_map[key] == "skip":
+                    bar += "🟥"
+            else:
+                bar += "⬜"
+
+        item = (name, days_list, bar, time)
+
+        if "⬜" in bar:
+            active.append(item)
+        else:
+            history.append(item)
+
+    text = "📊 <b>Прогресс</b>\n\n"
+
+    # 👉 активные
+    for name, days_list, bar, time in active:
+        title = name
+        if time:
+            title = f"{name} ({time})"
+
+        text += (
+            f"🔹 <b><i>{title}</i></b>\n"
+            f"<code>{' '.join(days_list)}</code>\n"
+            f"<code>{bar}</code>\n"
+            f"────────────\n"
+        )
+
+    # 👉 история
+    if history:
+        text += "\n📁 <b>История</b>\n\n"
+
+        for name, days_list, bar, time in history:
+            title = f"<s>{name}</s>"
+            if time:
+                title = f"<s>{name} ({time})</s>"
+
+            text += (
+                f"🔹 {title}\n"
+                f"<code>{' '.join(days_list)}</code>\n"
+                f"<code>{bar}</code>\n"
+                f"────────────\n"
+            )
+
+    # 👉 кнопки
+    kb = []
+
+    if mode == "personal":
+        kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="progress_family")])
+    else:
+        kb.append([InlineKeyboardButton(text="👤 Личные", callback_data="progress_personal")])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
+
+    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+
+@dp.callback_query(F.data == "progress_family")
+async def progress_family(c: CallbackQuery):
+    await show_progress(c, mode="family")
+
+
+@dp.callback_query(F.data == "progress_personal")
+async def progress_personal(c: CallbackQuery):
+    await show_progress(c, mode="personal")
+
+@dp.callback_query(F.data.startswith("skip_"))
+async def habit_skip(c: CallbackQuery):
+    _, hid, day = c.data.split("_")
+    hid = int(hid)
+
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    add_habit_log(hid, c.from_user.id, today + "_" + day, "skip")
 
     await c.answer("❌ Пропущено")
 
