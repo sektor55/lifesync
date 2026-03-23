@@ -14,6 +14,7 @@ from config import TOKEN
 from database import *
 from keyboards import *
 from states import *
+USER_MODE = {}
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -741,10 +742,13 @@ async def render_habits(user_id):
 
 @dp.callback_query(F.data == "habit_list")
 async def habit_list(c: CallbackQuery):
-    await show_my_habits(c, mode="personal")
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_my_habits(c, mode=mode)
 
 
 async def show_my_habits(c: CallbackQuery, mode="personal"):
+    USER_MODE[c.from_user.id] = mode  # ← СОХРАНЯЕМ режим
+
     habits = get_habits(c.from_user.id)
 
     from datetime import datetime
@@ -793,7 +797,6 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         if "⬜" in bar:
             kb.append([InlineKeyboardButton(text=name, callback_data=f"open_{hid}")])
 
-    # переключатель
     if mode == "personal":
         kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="my_family")])
     else:
@@ -848,7 +851,7 @@ async def choose_action(c: CallbackQuery):
         kb.append([
             InlineKeyboardButton(
                 text=d,
-                callback_data=f"{action}_{hid}_{d}"
+                callback_data=f"{action}_{hid}_{d}"  # ← ВАЖНО
             )
         ])
 
@@ -871,7 +874,7 @@ async def habit_progress(c: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("done_"))
 async def habit_done(c: CallbackQuery):
-    _, _, hid, day = c.data.split("_")
+    _, hid, day = c.data.split("_")
     hid = int(hid)
 
     from datetime import datetime
@@ -881,16 +884,24 @@ async def habit_done(c: CallbackQuery):
 
     await c.answer("✅ Выполнено")
 
-    await habit_list(c)
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_my_habits(c, mode=mode)
 
-async def show_progress(c: CallbackQuery, mode="personal"):
+async def show_progress(c: CallbackQuery, mode="personal", period="week"):
     habits = get_habits(c.from_user.id)
 
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
+    from datetime import datetime, timedelta
 
-    active = []
-    history = []
+    now = datetime.now()
+
+    if period == "week":
+        start_date = now - timedelta(days=7)
+    elif period == "month":
+        start_date = now - timedelta(days=30)
+    else:
+        start_date = datetime(2000, 1, 1)
+
+    text = f"📊 <b>Прогресс ({period})</b>\n\n"
 
     for h in habits:
         hid, name, days, h_type, time, task_type = h
@@ -900,73 +911,49 @@ async def show_progress(c: CallbackQuery, mode="personal"):
         if mode == "family" and h_type != "family":
             continue
 
-        days_list = days.split(",")
         logs = get_habit_logs(hid, c.from_user.id)
 
-        log_map = {l[0]: l[1] for l in logs}
+        filtered = []
 
-        bar = ""
+        for l in logs:
+            date_str = l[0].split("_")[0]
+            date = datetime.strptime(date_str, "%Y-%m-%d")
 
-        for d in days_list:
-            key = today + "_" + d
+            if date >= start_date:
+                filtered.append(l)
 
-            if key in log_map:
-                if log_map[key] == "done":
-                    bar += "🟩"
-                elif log_map[key] == "skip":
-                    bar += "🟥"
-            else:
-                bar += "⬜"
+        done = sum(1 for l in filtered if l[1] == "done")
+        skip = sum(1 for l in filtered if l[1] == "skip")
 
-        item = (name, days_list, bar, time)
+        text += f"🔹 <b>{name}</b>\n"
+        text += f"✅ {done} | ❌ {skip}\n"
+        text += "────────────\n"
 
-        if "⬜" in bar:
-            active.append(item)
-        else:
-            history.append(item)
-
-    text = "📊 <b>Прогресс</b>\n\n"
-
-    # 👉 активные
-    for name, days_list, bar, time in active:
-        title = name
-        if time:
-            title = f"{name} ({time})"
-
-        text += (
-            f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{' '.join(days_list)}</code>\n"
-            f"<code>{bar}</code>\n"
-            f"────────────\n"
-        )
-
-    # 👉 история
-    if history:
-        text += "\n📁 <b>История за неделю</b>\n\n"
-
-        for name, days_list, bar, time in history:
-            title = f"<s>{name}</s>"
-            if time:
-                title = f"<s>{name} ({time})</s>"
-
-            text += (
-                f"🔹 {title}\n"
-                f"<code>{' '.join(days_list)}</code>\n"
-                f"<code>{bar}</code>\n"
-                f"────────────\n"
-            )
-
-    # 👉 кнопки
-    kb = []
-
-    if mode == "personal":
-        kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="progress_family")])
-    else:
-        kb.append([InlineKeyboardButton(text="👤 Личные", callback_data="progress_personal")])
-
-    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
+    kb = [
+        [InlineKeyboardButton(text="📅 Неделя", callback_data="prog_week")],
+        [InlineKeyboardButton(text="🗓 Месяц", callback_data="prog_month")],
+        [InlineKeyboardButton(text="📊 Всё", callback_data="prog_all")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")]
+    ]
 
     await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    
+@dp.callback_query(F.data == "prog_week")
+async def prog_week(c: CallbackQuery):
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_progress(c, mode=mode, period="week")
+
+
+@dp.callback_query(F.data == "prog_month")
+async def prog_month(c: CallbackQuery):
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_progress(c, mode=mode, period="month")
+
+
+@dp.callback_query(F.data == "prog_all")
+async def prog_all(c: CallbackQuery):
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_progress(c, mode=mode, period="all")   
 
 @dp.callback_query(F.data == "progress_family")
 async def progress_family(c: CallbackQuery):
@@ -989,7 +976,8 @@ async def habit_skip(c: CallbackQuery):
 
     await c.answer("❌ Пропущено")
 
-    await habit_list(c)
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_my_habits(c, mode=mode)
 
 
 @dp.callback_query(F.data.startswith("del_"))
@@ -1000,7 +988,8 @@ async def habit_delete(c: CallbackQuery):
 
     await c.answer("🗑 Удалено")
 
-    await habit_list(c)
+    mode = USER_MODE.get(c.from_user.id, "personal")
+    await show_my_habits(c, mode=mode)
     
 
 
