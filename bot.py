@@ -741,8 +741,10 @@ async def render_habits(user_id):
 
 @dp.callback_query(F.data == "habit_list")
 async def habit_list(c: CallbackQuery):
-    await show_my_habits(c, mode="personal")    
- async def show_my_habits(c: CallbackQuery, mode="personal"):
+    await show_my_habits(c, mode="personal")
+
+
+async def show_my_habits(c: CallbackQuery, mode="personal"):
     habits = get_habits(c.from_user.id)
 
     from datetime import datetime
@@ -791,7 +793,7 @@ async def habit_list(c: CallbackQuery):
         if "⬜" in bar:
             kb.append([InlineKeyboardButton(text=name, callback_data=f"open_{hid}")])
 
-    # 🔁 переключатель
+    # переключатель
     if mode == "personal":
         kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="my_family")])
     else:
@@ -799,7 +801,11 @@ async def habit_list(c: CallbackQuery):
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
-    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")   
+    await c.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="HTML"
+    )   
     
 @dp.callback_query(F.data == "my_family")
 async def my_family(c: CallbackQuery):
