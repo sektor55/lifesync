@@ -602,12 +602,7 @@ async def select_hour(c: CallbackQuery, state: FSMContext):
 async def skip_time(c: CallbackQuery, state: FSMContext):
     await state.update_data(time=None)
 
-    await finish_habit_creation(c, state)  # ← ВОТ ЭТА СТРОКА
-
-    await c.message.edit_text(
-        "🏋️ Привычки",
-        reply_markup=habits_menu()
-    )
+    await finish_habit_creation(c, state)
     
     
 
@@ -624,8 +619,6 @@ async def select_minute(c: CallbackQuery, state: FSMContext):
         reply_markup=reminder_kb()
     )
 
-
-
 @dp.callback_query(F.data.startswith("rem_"))
 async def set_reminder(c: CallbackQuery, state: FSMContext):
     if c.data == "rem_skip":
@@ -636,8 +629,6 @@ async def set_reminder(c: CallbackQuery, state: FSMContext):
     await state.update_data(reminder=reminder)
 
     await finish_habit_creation(c, state)
-
-    await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
 
 @dp.message(AddHabit.time)
 async def set_time(m: Message, state: FSMContext):
@@ -650,7 +641,6 @@ async def set_time(m: Message, state: FSMContext):
 
     await finish_habit_creation(m, state)  # ← ВСТАВИТЬ
 
-    await m.answer("🏋️ Привычки", reply_markup=habits_menu())
     
 async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
     data = await state.get_data()
@@ -706,7 +696,7 @@ async def render_habits(user_id):
     today = datetime.now().strftime("%Y-%m-%d")
 
     for h in habits:
-        hid, name, days, h_type, time, task_type = h
+        hid, name, days, h_type, time, task_type, reminder = h
 
         days_list = days.split(",")
         logs = get_habit_logs(hid, user_id)
@@ -755,7 +745,11 @@ async def render_habits(user_id):
 @dp.callback_query(F.data == "habit_list")
 async def habit_list(c: CallbackQuery):
     mode = USER_MODE.get(c.from_user.id, "personal")
-    await show_my_habits(c, mode=mode)
+
+    try:
+        await show_my_habits(c, mode=mode)
+    except:
+        await c.message.answer("Ошибка открытия привычек")
 
 
 async def show_my_habits(c: CallbackQuery, mode="personal"):
@@ -771,7 +765,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     kb = []
 
     for h in habits:
-        hid, name, days, h_type, time, task_type = h
+        hid, name, days, h_type, time, task_type, reminder = h
 
         if mode == "personal" and h_type != "personal":
             continue
@@ -833,11 +827,18 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
-    await c.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
-        parse_mode="HTML"
-    )
+    try:
+        await c.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode="HTML"
+        )
+    except:
+        await c.message.answer(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode="HTML"
+        )
     
 @dp.callback_query(F.data == "my_family")
 async def my_family(c: CallbackQuery):
@@ -907,7 +908,10 @@ async def choose_action(c: CallbackQuery):
 # -------------------------
 @dp.callback_query(F.data == "habit_progress")
 async def habit_progress(c: CallbackQuery):
-    await show_progress(c, mode="personal")
+    try:
+        await show_progress(c, mode="personal")
+    except:
+        await c.message.answer("Ошибка открытия прогресса")
 
 
 # -------------------------
@@ -959,7 +963,7 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
     today = now.strftime("%Y-%m-%d")
 
     for h in habits:
-        hid, name, days, h_type, time, task_type = h
+        hid, name, days, h_type, time, task_type, reminder = h
 
         if mode == "personal" and h_type != "personal":
             continue
@@ -1017,11 +1021,18 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
-    await c.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
-        parse_mode="HTML"
-    )
+    try:
+        await c.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode="HTML"
+        )
+    except:
+        await c.message.answer(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode="HTML"
+        )
     
 @dp.callback_query(F.data == "prog_week")
 async def prog_week(c: CallbackQuery):
@@ -1100,35 +1111,65 @@ async def reminder_worker():
     while True:
         from datetime import datetime, timedelta
 
-        now = datetime.now().strftime("%H:%M")
+        now = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
 
         cur.execute("""
-            SELECT rowid, user_id, name, time, reminder
+            SELECT rowid, user_id, name, days, time, reminder
             FROM habits
             WHERE time IS NOT NULL AND reminder IS NOT NULL
         """)
 
         habits = cur.fetchall()
 
-        for hid, uid, name, time, reminder in habits:
+        for hid, uid, name, days, time, reminder in habits:
             try:
+                days_list = days.split(",")
+
+                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][now.weekday()]
+
+                # ❌ не тот день
+                if current_day not in days_list:
+                    continue
+
+                # ❌ уже выполнено / пропущено сегодня
+                logs = get_habit_logs(hid, uid)
+
+                already_done = False
+                for log_date, status in logs:
+                    if log_date.startswith(today_str):
+                        already_done = True
+                        break
+
+                if already_done:
+                    continue
+
+                # --- время ---
                 h, m = map(int, time.split(":"))
-            except:
-                continue
+                habit_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
 
-            habit_time = datetime.now().replace(hour=h, minute=m, second=0)
-            remind_time = habit_time - timedelta(minutes=reminder)
+                remind_time = habit_time - timedelta(minutes=reminder)
 
-            if remind_time.strftime("%H:%M") == now:
-                try:
-                    await bot.send_message(
-                        uid,
-                        f"⏰ Напоминание: {name} через {reminder} мин"
-                    )
-                except:
-                    pass
+                diff = (now - remind_time).total_seconds()
 
-        await asyncio.sleep(60)    
+                # 🔥 ключ дня
+                day_key = f"{today_str}_{current_day}"
+
+                # ❌ уже отправляли сегодня
+                if was_reminded_today(hid, uid, day_key):
+                    continue
+
+                # ✅ отправляем
+                if -30 <= diff <= 90:
+                    await bot.send_message(uid, f"⏰ Напоминание: {name}")
+
+                    # 🔥 фикс от спама
+                    mark_reminded(hid, uid, day_key)
+
+            except Exception as e:
+                print("Reminder error:", e)
+
+        await asyncio.sleep(30)     
 # =========================
 # СТАРТ
 # =========================

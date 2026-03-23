@@ -11,22 +11,35 @@ def init_habits_update():
         cur.execute("ALTER TABLE habits ADD COLUMN type TEXT")
     except:
         pass
+
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN time TEXT")
     except:
         pass
+
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN task_type TEXT")
     except:
         pass
+
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN family_id TEXT")
     except:
         pass
+
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN reminder INTEGER")
     except:
         pass
+
+    # 🔥 ВОТ СЮДА ДОБАВЛЯЕМ
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS habit_reminders(
+        habit_id INTEGER,
+        user_id INTEGER,
+        day_key TEXT
+    )
+    """)
 
     conn.commit()
 
@@ -173,4 +186,19 @@ def get_all_habits_with_time():
     """)
     return cur.fetchall()
     
- 
+def was_reminded_today(habit_id, user_id, day_key):
+    cur.execute("""
+        SELECT 1 FROM habit_reminders
+        WHERE habit_id=? AND user_id=? AND day_key=?
+    """, (habit_id, user_id, day_key))
+    return cur.fetchone() is not None
+
+
+def mark_reminded(habit_id, user_id, day_key):
+    cur.execute("""
+        INSERT INTO habit_reminders (habit_id, user_id, day_key)
+        VALUES (?, ?, ?)
+    """, (habit_id, user_id, day_key))
+    conn.commit()
+    
+  
