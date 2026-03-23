@@ -741,8 +741,7 @@ async def render_habits(user_id):
 
 @dp.callback_query(F.data == "habit_list")
 async def habit_list(c: CallbackQuery):
-    await show_my_habits(c, mode="personal")
-    
+    await show_my_habits(c, mode="personal")    
  async def show_my_habits(c: CallbackQuery, mode="personal"):
     habits = get_habits(c.from_user.id)
 
@@ -851,19 +850,7 @@ async def choose_action(c: CallbackQuery):
 
     await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))    
 
-@dp.callback_query(F.data.startswith("daypick_"))
-async def pick_day(c: CallbackQuery):
-    _, hid, day = c.data.split("_")
-    hid = int(hid)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Выполнено", callback_data=f"done_{hid}_{day}")],
-        [InlineKeyboardButton(text="❌ Пропустить", callback_data=f"skip_{hid}_{day}")],
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"del_{hid}")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")]
-    ])
-
-    await c.message.edit_text(f"День: {day}", reply_markup=kb)
 # -------------------------
 # ПРОГРЕСС
 # -------------------------
@@ -878,7 +865,7 @@ async def habit_progress(c: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("done_"))
 async def habit_done(c: CallbackQuery):
-    _, hid, day = c.data.split("_")
+    _, _, hid, day = c.data.split("_")
     hid = int(hid)
 
     from datetime import datetime
