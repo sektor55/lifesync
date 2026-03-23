@@ -741,17 +741,93 @@ async def render_habits(user_id):
 
 @dp.callback_query(F.data == "habit_list")
 async def habit_list(c: CallbackQuery):
-    text, kb = await render_habits(c.from_user.id)
-
-    await c.message.edit_text(
-        text,
-        reply_markup=kb,
-        parse_mode="HTML"
-    )
+    await show_my_habits(c, mode="personal")
     
+ async def show_my_habits(c: CallbackQuery, mode="personal"):
+    habits = get_habits(c.from_user.id)
+
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    text = "📋 <b>Мои привычки</b>\n\n"
+    kb = []
+
+    for h in habits:
+        hid, name, days, h_type, time, task_type = h
+
+        if mode == "personal" and h_type != "personal":
+            continue
+        if mode == "family" and h_type != "family":
+            continue
+
+        days_list = days.split(",")
+        logs = get_habit_logs(hid, c.from_user.id)
+
+        log_map = {l[0]: l[1] for l in logs}
+
+        bar = ""
+
+        for d in days_list:
+            key = today + "_" + d
+
+            if key in log_map:
+                if log_map[key] == "done":
+                    bar += "🟩"
+                elif log_map[key] == "skip":
+                    bar += "🟥"
+            else:
+                bar += "⬜"
+
+        title = name
+        if time:
+            title = f"{name} ({time})"
+
+        text += (
+            f"🔹 <b><i>{title}</i></b>\n"
+            f"<code>{' '.join(days_list)}</code>\n"
+            f"<code>{bar}</code>\n"
+            f"────────────\n"
+        )
+
+        if "⬜" in bar:
+            kb.append([InlineKeyboardButton(text=name, callback_data=f"open_{hid}")])
+
+    # 🔁 переключатель
+    if mode == "personal":
+        kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="my_family")])
+    else:
+        kb.append([InlineKeyboardButton(text="👤 Личные", callback_data="my_personal")])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
+
+    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")   
+    
+@dp.callback_query(F.data == "my_family")
+async def my_family(c: CallbackQuery):
+    await show_my_habits(c, mode="family")
+
+
+@dp.callback_query(F.data == "my_personal")
+async def my_personal(c: CallbackQuery):
+    await show_my_habits(c, mode="personal") 
+ 
 @dp.callback_query(F.data.startswith("open_"))
 async def open_habit(c: CallbackQuery):
     hid = int(c.data.split("_")[1])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"choose_done_{hid}")],
+        [InlineKeyboardButton(text="❌ Пропустить", callback_data=f"choose_skip_{hid}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"del_{hid}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")]
+    ])
+
+    await c.message.edit_text("Выбери действие:", reply_markup=kb)
+    
+@dp.callback_query(F.data.startswith("choose_"))
+async def choose_action(c: CallbackQuery):
+    _, action, hid = c.data.split("_")
+    hid = int(hid)
 
     habits = get_habits(c.from_user.id)
     habit = next((h for h in habits if h[0] == hid), None)
@@ -763,15 +839,17 @@ async def open_habit(c: CallbackQuery):
 
     kb = []
 
-    # 👉 кнопки дней
     for d in days:
         kb.append([
-            InlineKeyboardButton(text=d, callback_data=f"daypick_{hid}_{d}")
+            InlineKeyboardButton(
+                text=d,
+                callback_data=f"{action}_{hid}_{d}"
+            )
         ])
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")])
 
-    await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))    
 
 @dp.callback_query(F.data.startswith("daypick_"))
 async def pick_day(c: CallbackQuery):
@@ -871,7 +949,7 @@ async def show_progress(c: CallbackQuery, mode="personal"):
 
     # 👉 история
     if history:
-        text += "\n📁 <b>История</b>\n\n"
+        text += "\n📁 <b>История за неделю</b>\n\n"
 
         for name, days_list, bar, time in history:
             title = f"<s>{name}</s>"
