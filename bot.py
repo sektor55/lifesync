@@ -845,19 +845,42 @@ async def choose_action(c: CallbackQuery):
 
     days = habit[2].split(",")
 
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    logs = get_habit_logs(hid, c.from_user.id)
+    used_days = set()
+
+    for l in logs:
+        if l[0].startswith(today):
+            used_days.add(l[0].split("_")[1])
+
     kb = []
 
     for d in days:
+        if d in used_days:
+            continue  # 🚫 уже использован
+
         kb.append([
             InlineKeyboardButton(
                 text=d,
-                callback_data=f"{action}_{hid}_{d}"  # ← ВАЖНО
+                callback_data=f"{action}_{hid}_{d}"
             )
         ])
 
+    # если всё уже заполнено
+    if not kb:
+        await c.answer("Все дни уже отмечены ✅", show_alert=True)
+        mode = USER_MODE.get(c.from_user.id, "personal")
+        await show_my_habits(c, mode=mode)
+        return
+
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")])
 
-    await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))    
+    await c.message.edit_text(
+        "Выбери день:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )    
 
 
 # -------------------------
@@ -888,10 +911,11 @@ async def habit_done(c: CallbackQuery):
     await show_my_habits(c, mode=mode)
 
 async def show_progress(c: CallbackQuery, mode="personal", period="week"):
+    USER_MODE[c.from_user.id] = mode
+
     habits = get_habits(c.from_user.id)
 
     from datetime import datetime, timedelta
-
     now = datetime.now()
 
     if period == "week":
@@ -901,7 +925,10 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
     else:
         start_date = datetime(2000, 1, 1)
 
-    text = f"📊 <b>Прогресс ({period})</b>\n\n"
+    text = f"📊 <b>Прогресс</b>\n\n"
+    kb = []
+
+    today = now.strftime("%Y-%m-%d")
 
     for h in habits:
         hid, name, days, h_type, time, task_type = h
@@ -911,32 +938,62 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
         if mode == "family" and h_type != "family":
             continue
 
+        days_list = days.split(",")
         logs = get_habit_logs(hid, c.from_user.id)
 
-        filtered = []
+        log_map = {}
 
         for l in logs:
             date_str = l[0].split("_")[0]
             date = datetime.strptime(date_str, "%Y-%m-%d")
 
             if date >= start_date:
-                filtered.append(l)
+                log_map[l[0]] = l[1]
 
-        done = sum(1 for l in filtered if l[1] == "done")
-        skip = sum(1 for l in filtered if l[1] == "skip")
+        bar = ""
 
-        text += f"🔹 <b>{name}</b>\n"
-        text += f"✅ {done} | ❌ {skip}\n"
-        text += "────────────\n"
+        for d in days_list:
+            key = today + "_" + d
 
-    kb = [
-        [InlineKeyboardButton(text="📅 Неделя", callback_data="prog_week")],
-        [InlineKeyboardButton(text="🗓 Месяц", callback_data="prog_month")],
-        [InlineKeyboardButton(text="📊 Всё", callback_data="prog_all")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")]
-    ]
+            if key in log_map:
+                if log_map[key] == "done":
+                    bar += "🟩"
+                elif log_map[key] == "skip":
+                    bar += "🟥"
+            else:
+                bar += "⬜"
 
-    await c.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+        title = name
+        if time:
+            title = f"{name} ({time})"
+
+        text += (
+            f"🔹 <b><i>{title}</i></b>\n"
+            f"<code>{' '.join(days_list)}</code>\n"
+            f"<code>{bar}</code>\n"
+            f"────────────\n"
+        )
+
+    # 🔁 переключатели режимов
+    if mode == "personal":
+        kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="progress_family")])
+    else:
+        kb.append([InlineKeyboardButton(text="👤 Личные", callback_data="progress_personal")])
+
+    # 📅 периоды
+    kb.append([
+        InlineKeyboardButton(text="📅 Неделя", callback_data="prog_week"),
+        InlineKeyboardButton(text="🗓 Месяц", callback_data="prog_month"),
+        InlineKeyboardButton(text="📊 Всё", callback_data="prog_all")
+    ])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
+
+    await c.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="HTML"
+    )
     
 @dp.callback_query(F.data == "prog_week")
 async def prog_week(c: CallbackQuery):
