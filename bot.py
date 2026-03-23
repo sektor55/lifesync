@@ -477,9 +477,9 @@ def get_days_kb(selected):
 
     for d in DAYS:
         if d in selected:
-            text = f"{d} 🟢"
+            text = f"•{d}"
         else:
-            text = d
+            text = f" {d}"
 
         row.append(InlineKeyboardButton(
             text=text,
@@ -689,22 +689,29 @@ async def render_habits(user_id):
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
 
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+
     for h in habits:
-        hid, name, days, *_ = h
+        hid, name, days, h_type, time, task_type = h
 
         days_list = days.split(",")
         logs = get_habit_logs(hid, user_id)
 
-        done = sum(1 for l in logs if l[1] == "done")
-        skip = sum(1 for l in logs if l[1] == "skip")
+        # 👉 делаем словарь: дата -> статус
+        log_map = {l[0]: l[1] for l in logs}
 
-        total = len(days_list)
+        bar = ""
 
-        bar = (
-            "🟩" * done +
-            "🟥" * skip +
-            "⬜" * (total - done - skip)
-        )
+        for d in days_list:
+            # если есть лог за сегодня
+            if today in log_map:
+                if log_map[today] == "done":
+                    bar += "🟩"
+                elif log_map[today] == "skip":
+                    bar += "🟥"
+            else:
+                bar += "⬜"
 
         labels = " ".join(days_list)
 
@@ -715,9 +722,11 @@ async def render_habits(user_id):
             f"────────────\n"
         )
 
-        kb.append([
-            InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
-        ])
+        # ❗ если задача разовая и уже выполнена — НЕ показываем
+        if not (task_type == "once" and today in log_map):
+            kb.append([
+                InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
+            ])
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
@@ -767,11 +776,11 @@ async def habit_progress(c: CallbackQuery):
         else:
             family.append(h)
 
-    def build_block(items, is_family=False):
-        if is_family:
-            text = "\n────────────\n👥 <b>Общие</b>\n\n"
-        else:
-            text = f"\n👤 <b>Личные</b>\n\n"
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    def build_block(items, title):
+        text = f"\n{title}\n\n"
 
         for h in items:
             hid, name, days, *_ = h
@@ -779,23 +788,26 @@ async def habit_progress(c: CallbackQuery):
             days_list = days.split(",")
             logs = get_habit_logs(hid, c.from_user.id)
 
-            done = sum(1 for l in logs if l[1] == "done")
-            skip = sum(1 for l in logs if l[1] == "skip")
+            log_map = {l[0]: l[1] for l in logs}
 
-            total = len(days_list)
+            bar = ""
 
-            bar = (
-                "🟩" * done +
-                "🟥" * skip +
-                "⬜" * (total - done - skip)
-            )
+            for d in days_list:
+                if today in log_map:
+                    if log_map[today] == "done":
+                        bar += "🟩"
+                    elif log_map[today] == "skip":
+                        bar += "🟥"
+                else:
+                    bar += "⬜"
 
             labels = " ".join(days_list)
 
             text += (
-                f"<b>{name}</b>\n"
+                f"🔹 <b><i>{name}</i></b>\n"
                 f"<code>{labels}</code>\n"
-                f"<code>{bar}</code>\n\n"
+                f"<code>{bar}</code>\n"
+                f"────────────\n"
             )
 
         return text
@@ -803,10 +815,10 @@ async def habit_progress(c: CallbackQuery):
     text = "📊 <b>Прогресс</b>\n"
 
     if personal:
-        text += build_block(personal)
+        text += build_block(personal, "👤 <b>Личные</b>")
 
     if family:
-        text += build_block(family, is_family=True)
+        text += build_block(family, "👥 <b>Общие</b>")
 
     await c.message.edit_text(
         text,
@@ -830,7 +842,6 @@ async def habit_done(c: CallbackQuery):
 
     await c.answer("✅ Выполнено")
 
-    await c.message.delete()
     await habit_list(c)
 
 
@@ -846,7 +857,6 @@ async def habit_skip(c: CallbackQuery):
 
     await c.answer("❌ Пропущено")
 
-    await c.message.delete()
     await habit_list(c)
 
 
@@ -858,7 +868,6 @@ async def habit_delete(c: CallbackQuery):
 
     await c.answer("🗑 Удалено")
 
-    await c.message.delete()
     await habit_list(c)
     
 
