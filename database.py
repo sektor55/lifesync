@@ -23,6 +23,10 @@ def init_habits_update():
         cur.execute("ALTER TABLE habits ADD COLUMN family_id TEXT")
     except:
         pass
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN reminder INTEGER")
+    except:
+        pass
 
     conn.commit()
 
@@ -114,17 +118,17 @@ status TEXT
 conn.commit()
 
 
-def add_habit(user_id, name, days, h_type, time, task_type, family_id=None):
+def add_habit(user_id, name, days, h_type, time, task_type, family_id=None, reminder=None):
     cur.execute("""
-        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id)
-        VALUES(?,?,?,?,?,?,?)
-    """, (user_id, name, days, h_type, time, task_type, family_id))
+        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id, reminder)
+        VALUES(?,?,?,?,?,?,?,?)
+    """, (user_id, name, days, h_type, time, task_type, family_id, reminder))
     conn.commit()
 
 
 def get_habits(user_id):
     cur.execute("""
-        SELECT rowid, name, days, type, time, task_type
+        SELECT rowid, name, days, type, time, task_type, reminder
         FROM habits
         WHERE user_id=?
     """, (user_id,))
@@ -150,3 +154,23 @@ def delete_habit(habit_id):
     cur.execute("DELETE FROM habits WHERE rowid=?", (habit_id,))
     cur.execute("DELETE FROM habit_logs WHERE habit_id=?", (habit_id,))
     conn.commit()
+    
+    
+def set_habit_reminder(habit_id, minutes_before):
+    cur.execute("""
+        UPDATE habits
+        SET reminder = ?
+        WHERE rowid = ?
+    """, (minutes_before, habit_id))
+
+    conn.commit()
+    
+def get_all_habits_with_time():
+    cur.execute("""
+        SELECT rowid, user_id, name, time, reminder
+        FROM habits
+        WHERE time IS NOT NULL AND reminder IS NOT NULL
+    """)
+    return cur.fetchall()
+    
+ 

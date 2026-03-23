@@ -619,15 +619,25 @@ async def select_minute(c: CallbackQuery, state: FSMContext):
 
     await state.update_data(time=time)
 
-    await finish_habit_creation(c, state)  # ← ВСТАВИТЬ
-
     await c.message.edit_text(
-        "🏋️ Привычки",
-        reply_markup=habits_menu()
+        "Включить напоминание?",
+        reply_markup=reminder_kb()
     )
-    
-    
 
+
+
+@dp.callback_query(F.data.startswith("rem_"))
+async def set_reminder(c: CallbackQuery, state: FSMContext):
+    if c.data == "rem_skip":
+        reminder = None
+    else:
+        reminder = int(c.data.split("_")[1])
+
+    await state.update_data(reminder=reminder)
+
+    await finish_habit_creation(c, state)
+
+    await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
 
 @dp.message(AddHabit.time)
 async def set_time(m: Message, state: FSMContext):
@@ -653,7 +663,9 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
         days=",".join(sorted_days),
         h_type=data["type"],
         time=data.get("time"),
-        task_type=data.get("task_type")
+        task_type=data.get("task_type"),
+        family_id=None,
+        reminder=data.get("reminder")
     )
 
     await state.clear()
@@ -747,12 +759,13 @@ async def habit_list(c: CallbackQuery):
 
 
 async def show_my_habits(c: CallbackQuery, mode="personal"):
-    USER_MODE[c.from_user.id] = mode  # ← СОХРАНЯЕМ режим
+    USER_MODE[c.from_user.id] = mode
 
     habits = get_habits(c.from_user.id)
 
-    from datetime import datetime
+    from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
@@ -771,6 +784,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         log_map = {l[0]: l[1] for l in logs}
 
         bar = ""
+        all_done_today = True
 
         for d in days_list:
             key = today + "_" + d
@@ -780,8 +794,20 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                     bar += "🟩"
                 elif log_map[key] == "skip":
                     bar += "🟥"
+                    all_done_today = False
             else:
                 bar += "⬜"
+                all_done_today = False
+
+        # 🔥 ЕСЛИ ВЧЕРА БЫЛО ПОЛНОСТЬЮ СДЕЛАНО → СКРЫВАЕМ
+        yesterday_done = True
+        for d in days_list:
+            key = yesterday + "_" + d
+            if key not in log_map or log_map[key] != "done":
+                yesterday_done = False
+
+        if yesterday_done:
+            continue
 
         title = name
         if time:
@@ -794,8 +820,11 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             f"────────────\n"
         )
 
+        # показываем только если есть пустые
         if "⬜" in bar:
-            kb.append([InlineKeyboardButton(text=name, callback_data=f"open_{hid}")])
+            kb.append([
+                InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
+            ])
 
     if mode == "personal":
         kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="my_family")])
@@ -808,7 +837,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
         parse_mode="HTML"
-    )   
+    )
     
 @dp.callback_query(F.data == "my_family")
 async def my_family(c: CallbackQuery):
@@ -845,42 +874,32 @@ async def choose_action(c: CallbackQuery):
 
     days = habit[2].split(",")
 
+    logs = get_habit_logs(hid, c.from_user.id)
+
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
 
-    logs = get_habit_logs(hid, c.from_user.id)
     used_days = set()
 
-    for l in logs:
-        if l[0].startswith(today):
-            used_days.add(l[0].split("_")[1])
+    for log_date, status in logs:
+        if log_date.startswith(today):
+            day = log_date.split("_")[1]
+            used_days.add(day)
 
     kb = []
 
     for d in days:
-        if d in used_days:
-            continue  # 🚫 уже использован
-
-        kb.append([
-            InlineKeyboardButton(
-                text=d,
-                callback_data=f"{action}_{hid}_{d}"
-            )
-        ])
-
-    # если всё уже заполнено
-    if not kb:
-        await c.answer("Все дни уже отмечены ✅", show_alert=True)
-        mode = USER_MODE.get(c.from_user.id, "personal")
-        await show_my_habits(c, mode=mode)
-        return
+        if d not in used_days:  # 🔥 ВАЖНО
+            kb.append([
+                InlineKeyboardButton(
+                    text=d,
+                    callback_data=f"{action}_{hid}_{d}"
+                )
+            ])
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habit_list")])
 
-    await c.message.edit_text(
-        "Выбери день:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
-    )    
+    await c.message.edit_text("Выбери день:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 
 # -------------------------
@@ -902,8 +921,17 @@ async def habit_done(c: CallbackQuery):
 
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
+    key = today + "_" + day
 
-    add_habit_log(hid, c.from_user.id, today + "_" + day, "done")
+    logs = get_habit_logs(hid, c.from_user.id)
+
+    # ❌ ЕСЛИ УЖЕ ЕСТЬ — НЕ ДАЕМ НАЖАТЬ
+    for l in logs:
+        if l[0] == key:
+            await c.answer("Уже отмечено", show_alert=True)
+            return
+
+    add_habit_log(hid, c.from_user.id, key, "done")
 
     await c.answer("✅ Выполнено")
 
@@ -1028,8 +1056,16 @@ async def habit_skip(c: CallbackQuery):
 
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
+    key = today + "_" + day
 
-    add_habit_log(hid, c.from_user.id, today + "_" + day, "skip")
+    logs = get_habit_logs(hid, c.from_user.id)
+
+    for l in logs:
+        if l[0] == key:
+            await c.answer("Уже отмечено", show_alert=True)
+            return
+
+    add_habit_log(hid, c.from_user.id, key, "skip")
 
     await c.answer("❌ Пропущено")
 
@@ -1049,11 +1085,55 @@ async def habit_delete(c: CallbackQuery):
     await show_my_habits(c, mode=mode)
     
 
+        
+def reminder_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏰ За 10 мин", callback_data="rem_10")],
+        [InlineKeyboardButton(text="⏰ За 15 мин", callback_data="rem_15")],
+        [InlineKeyboardButton(text="⏰ За 30 мин", callback_data="rem_30")],
+        [InlineKeyboardButton(text="⏰ За 1 час", callback_data="rem_60")],
+        [InlineKeyboardButton(text="⏰ За 3 часа", callback_data="rem_180")],
+        [InlineKeyboardButton(text="❌ Без напоминаний", callback_data="rem_skip")]
+    ])
+    
+async def reminder_worker():
+    while True:
+        from datetime import datetime, timedelta
 
+        now = datetime.now().strftime("%H:%M")
+
+        cur.execute("""
+            SELECT rowid, user_id, name, time, reminder
+            FROM habits
+            WHERE time IS NOT NULL AND reminder IS NOT NULL
+        """)
+
+        habits = cur.fetchall()
+
+        for hid, uid, name, time, reminder in habits:
+            try:
+                h, m = map(int, time.split(":"))
+            except:
+                continue
+
+            habit_time = datetime.now().replace(hour=h, minute=m, second=0)
+            remind_time = habit_time - timedelta(minutes=reminder)
+
+            if remind_time.strftime("%H:%M") == now:
+                try:
+                    await bot.send_message(
+                        uid,
+                        f"⏰ Напоминание: {name} через {reminder} мин"
+                    )
+                except:
+                    pass
+
+        await asyncio.sleep(60)    
 # =========================
 # СТАРТ
 # =========================
 async def main():
+    asyncio.create_task(reminder_worker())
     await dp.start_polling(bot)
 
 
