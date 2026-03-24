@@ -654,7 +654,7 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
 
     sorted_days = [d for d in DAYS if d in data["days"]]
 
-    tz = 0  # временно
+    tz = get_user_timezone(c.from_user.id)
 
     add_habit(
         user_id=c.from_user.id,
@@ -957,7 +957,7 @@ async def choose_action(c: CallbackQuery):
 
         mode = USER_MODE.get(c.from_user.id, "personal")
         await show_my_habits(c, mode=mode)
-        return)
+        return
 
     # --- стандартная логика ---
     logs = get_habit_logs(hid, c.from_user.id)
@@ -1193,9 +1193,9 @@ def reminder_kb():
     ])
     
 async def reminder_worker():
-    while True:
-        from datetime import datetime, timedelta
+    from datetime import datetime, timedelta
 
+    while True:
         now_utc = datetime.utcnow()
 
         cur.execute("""
@@ -1208,37 +1208,26 @@ async def reminder_worker():
 
         for hid, uid, name, days, time, reminder, tz in habits:
             try:
-                # ✅ локальное время пользователя
-                now = now_utc + timedelta(hours=tz)
-                today_str = now.strftime("%Y-%m-%d")
+                user_now = now_utc + timedelta(hours=tz)
 
-                days_list = days.split(",")
-                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][now.weekday()]
+                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][user_now.weekday()]
 
-                if current_day not in days_list:
+                if current_day not in days.split(","):
                     continue
 
-                # ❌ уже сделано
+                today_str = user_now.strftime("%Y-%m-%d")
+
                 logs = get_habit_logs(hid, uid)
-
-                if any(log_date.startswith(today_str) for log_date, _ in logs):
+                if any(log[0].startswith(today_str) for log in logs):
                     continue
 
-                # --- время привычки ---
                 h, m = map(int, time.split(":"))
-                habit_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                habit_time = user_now.replace(hour=h, minute=m, second=0, microsecond=0)
 
                 remind_time = habit_time - timedelta(minutes=reminder)
 
-                # ✅ если время ещё не наступило
-                if now < remind_time:
-                    continue
-
-                # ❌ если сильно опоздали
-                if now < remind_time:
-                    continue
-
-                if now > habit_time:
+                # ✅ КЛЮЧЕВОЕ — окно в 60 секунд
+                if not (remind_time <= user_now <= remind_time + timedelta(seconds=60)):
                     continue
 
                 day_key = f"{today_str}_{current_day}"
@@ -1253,7 +1242,7 @@ async def reminder_worker():
             except Exception as e:
                 print("Reminder error:", e)
 
-        await asyncio.sleep(20)     
+        await asyncio.sleep(10)     
         
 from datetime import datetime
 
@@ -1261,7 +1250,34 @@ def get_user_tz():
     now = datetime.now()
     utc = datetime.utcnow()
     import time
-    return int(time.localtime().tm_gmtoff // 3600)        
+    return int(time.localtime().tm_gmtoff // 3600)
+
+def request_location_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📍 Отправить локацию", request_location=True)]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+@dp.message(F.location)
+async def save_location(m: Message):
+    lat = m.location.latitude
+    lon = m.location.longitude
+
+    import requests
+
+    url = f"http://api.timezonedb.com/v2.1/get-time-zone?key=YOUR_KEY&format=json&by=position&lat={lat}&lng={lon}"
+
+    r = requests.get(url).json()
+
+    tz_offset = int(r["gmtOffset"] // 3600)
+
+    save_user_timezone(m.from_user.id, tz_offset)
+
+    await m.answer(f"✅ Часовой пояс установлен: UTC{tz_offset:+}")    
+    
 # =========================
 # СТАРТ
 # =========================
