@@ -654,7 +654,7 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
 
     sorted_days = [d for d in DAYS if d in data["days"]]
 
-    tz = get_user_tz()
+    tz = 0  # временно
 
     add_habit(
         user_id=c.from_user.id,
@@ -937,12 +937,27 @@ async def choose_action(c: CallbackQuery):
     if len(days) == 1:
         day = days[0]
 
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        key = today + "_" + day
+
+        logs = get_habit_logs(hid, c.from_user.id)
+
+        for l in logs:
+            if l[0] == key:
+                await c.answer("Уже отмечено", show_alert=True)
+                return
+
         if action == "done":
-            c.data = f"done_{hid}_{day}"
-            return await habit_done(c)
+            add_habit_log(hid, c.from_user.id, key, "done")
+            await c.answer("✅ Выполнено")
         else:
-            c.data = f"skip_{hid}_{day}"
-            return await habit_skip(c)
+            add_habit_log(hid, c.from_user.id, key, "skip")
+            await c.answer("❌ Пропущено")
+
+        mode = USER_MODE.get(c.from_user.id, "personal")
+        await show_my_habits(c, mode=mode)
+        return)
 
     # --- стандартная логика ---
     logs = get_habit_logs(hid, c.from_user.id)
@@ -1220,7 +1235,10 @@ async def reminder_worker():
                     continue
 
                 # ❌ если сильно опоздали
-                if (now - remind_time).total_seconds() > 600:
+                if now < remind_time:
+                    continue
+
+                if now > habit_time:
                     continue
 
                 day_key = f"{today_str}_{current_day}"
