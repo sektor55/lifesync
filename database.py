@@ -31,6 +31,11 @@ def init_habits_update():
         cur.execute("ALTER TABLE habits ADD COLUMN reminder INTEGER")
     except:
         pass
+        
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
+    except:
+        pass    
 
     # 🔥 ВОТ СЮДА ДОБАВЛЯЕМ
     cur.execute("""
@@ -53,11 +58,19 @@ type TEXT,
 category TEXT
 )""")
 
-cur.execute("""CREATE TABLE IF NOT EXISTS habits(
-user_id INTEGER,
-name TEXT,
-days TEXT
-)""")
+cur.execute("""
+CREATE TABLE IF NOT EXISTS habits(
+    user_id INTEGER,
+    name TEXT,
+    days TEXT,
+    type TEXT,
+    time TEXT,
+    task_type TEXT,
+    family_id TEXT,
+    reminder INTEGER,
+    tz INTEGER DEFAULT 0
+)
+""")
 
 cur.execute("""CREATE TABLE IF NOT EXISTS family(
 user_id INTEGER,
@@ -131,11 +144,11 @@ status TEXT
 conn.commit()
 
 
-def add_habit(user_id, name, days, h_type, time, task_type, family_id=None, reminder=None):
+def add_habit(user_id, name, days, h_type, time, task_type, family_id=None, reminder=None, tz=0):
     cur.execute("""
-        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id, reminder)
-        VALUES(?,?,?,?,?,?,?,?)
-    """, (user_id, name, days, h_type, time, task_type, family_id, reminder))
+        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id, reminder, tz)
+        VALUES(?,?,?,?,?,?,?,?,?)
+    """, (user_id, name, days, h_type, time, task_type, family_id, reminder, tz))
     conn.commit()
 
 

@@ -290,7 +290,7 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
     )
 
 
-@dp.callback_query(F.data == "inc_custom")
+@dp.callback_query(F.data == "inc_custom_handler")
 async def inc_custom_start(c: CallbackQuery, state: FSMContext):
     await state.set_state("income_custom")
     await c.message.answer("Введи категорию")
@@ -654,6 +654,8 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
 
     sorted_days = [d for d in DAYS if d in data["days"]]
 
+    tz = get_user_tz()
+
     add_habit(
         user_id=c.from_user.id,
         name=data["name"],
@@ -662,7 +664,8 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
         time=data.get("time"),
         task_type=data.get("task_type"),
         family_id=None,
-        reminder=data.get("reminder")
+        reminder=data.get("reminder"),
+        tz=tz
     )
 
     await state.clear()
@@ -814,6 +817,11 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         if time:
             title = f"{name} ({time})"
 
+        streak = get_streak(hid, c.from_user.id)
+
+        if streak > 0:
+            title += f" {streak}🔥"
+
         # 🔥 если всё выполнено сегодня → зачеркиваем
         if "⬜" not in bar:
             title = f"<s>{title}</s>"
@@ -872,6 +880,45 @@ async def open_habit(c: CallbackQuery):
     ])
 
     await c.message.edit_text("Выбери действие:", reply_markup=kb)
+    
+def get_streak(habit_id, user_id):
+    from datetime import datetime, timedelta
+
+    logs = get_habit_logs(habit_id, user_id)
+
+    if not logs:
+        return 0
+
+    log_map = {l[0]: l[1] for l in logs}
+
+    today = datetime.now()
+    streak = 0
+
+    while True:
+        week_ok = True
+
+        for i in range(7):
+            day = today - timedelta(days=i + streak * 7)
+            day_str = day.strftime("%Y-%m-%d")
+
+            # проверяем есть ли хоть одна запись "не done"
+            found = False
+
+            for key in log_map:
+                if key.startswith(day_str):
+                    if log_map[key] != "done":
+                        week_ok = False
+                    found = True
+
+            if not found:
+                week_ok = False
+
+        if week_ok:
+            streak += 1
+        else:
+            break
+
+    return streak    
     
 @dp.callback_query(F.data.startswith("choose_"))
 async def choose_action(c: CallbackQuery):
@@ -1134,61 +1181,53 @@ async def reminder_worker():
     while True:
         from datetime import datetime, timedelta
 
-        now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
+        now_utc = datetime.utcnow()
 
         cur.execute("""
-            SELECT rowid, user_id, name, days, time, reminder
+            SELECT rowid, user_id, name, days, time, reminder, tz
             FROM habits
             WHERE time IS NOT NULL AND reminder IS NOT NULL
         """)
 
         habits = cur.fetchall()
 
-        for hid, uid, name, days, time, reminder in habits:
+        for hid, uid, name, days, time, reminder, tz in habits:
             try:
-                days_list = days.split(",")
+                # ✅ локальное время пользователя
+                now = now_utc + timedelta(hours=tz)
+                today_str = now.strftime("%Y-%m-%d")
 
+                days_list = days.split(",")
                 current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][now.weekday()]
 
-                # ❌ не тот день
                 if current_day not in days_list:
                     continue
 
-                # ❌ уже выполнено / пропущено
+                # ❌ уже сделано
                 logs = get_habit_logs(hid, uid)
 
-                already_done = False
-                for log_date, status in logs:
-                    if log_date.startswith(today_str):
-                        already_done = True
-                        break
-
-                if already_done:
+                if any(log_date.startswith(today_str) for log_date, _ in logs):
                     continue
 
                 # --- время привычки ---
                 h, m = map(int, time.split(":"))
                 habit_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
 
-                # --- время напоминания ---
                 remind_time = habit_time - timedelta(minutes=reminder)
 
-                # ✅ ГЛАВНАЯ ЛОГИКА
+                # ✅ если время ещё не наступило
                 if now < remind_time:
                     continue
 
-                # ❌ если уже сильно поздно (прошло больше 10 минут)
+                # ❌ если сильно опоздали
                 if (now - remind_time).total_seconds() > 600:
                     continue
 
                 day_key = f"{today_str}_{current_day}"
 
-                # ❌ уже отправляли
                 if was_reminded_today(hid, uid, day_key):
                     continue
 
-                # ✅ отправка
                 await bot.send_message(uid, f"⏰ Напоминание: {name}")
 
                 mark_reminded(hid, uid, day_key)
@@ -1197,6 +1236,14 @@ async def reminder_worker():
                 print("Reminder error:", e)
 
         await asyncio.sleep(20)     
+        
+from datetime import datetime
+
+def get_user_tz():
+    now = datetime.now()
+    utc = datetime.utcnow()
+    import time
+    return int(time.localtime().tm_gmtoff // 3600)        
 # =========================
 # СТАРТ
 # =========================
