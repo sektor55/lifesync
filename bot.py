@@ -601,7 +601,6 @@ async def select_hour(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(AddHabit.time, F.data == "skip_time")
 async def skip_time(c: CallbackQuery, state: FSMContext):
     await state.update_data(time=None)
-
     await finish_habit_creation(c, state)
     
     
@@ -806,6 +805,10 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         title = name
         if time:
             title = f"{name} ({time})"
+
+        # 🔥 если всё выполнено сегодня → зачеркиваем
+        if "⬜" not in bar:
+            title = f"<s>{title}</s>"
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
@@ -1126,10 +1129,9 @@ async def reminder_worker():
             try:
                 days_list = days.split(",")
 
-                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][now.weekday()]
+                habit_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][habit_time.weekday()]
 
-                # ❌ не тот день
-                if current_day not in days_list:
+                if habit_day not in days_list:
                     continue
 
                 # ❌ уже выполнено / пропущено сегодня
