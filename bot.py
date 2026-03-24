@@ -461,7 +461,15 @@ async def habit_add_start(c: CallbackQuery, state: FSMContext):
 
 @dp.message(AddHabit.name)
 async def habit_name(m: Message, state: FSMContext):
-    await state.update_data(name=m.text)
+    name = m.text.strip()
+
+    # если первый символ не буква/цифра (эмодзи)
+    if len(name) > 1 and not name[0].isalnum():
+        name = name[0] + name[1:].upper()
+    else:
+        name = name.upper()
+
+    await state.update_data(name=name)
     await state.set_state(AddHabit.type)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -878,6 +886,18 @@ async def choose_action(c: CallbackQuery):
 
     days = habit[2].split(",")
 
+    # ✅ ЕСЛИ ТОЛЬКО 1 ДЕНЬ — НЕ СПРАШИВАЕМ
+    if len(days) == 1:
+        day = days[0]
+
+        if action == "done":
+            c.data = f"done_{hid}_{day}"
+            return await habit_done(c)
+        else:
+            c.data = f"skip_{hid}_{day}"
+            return await habit_skip(c)
+
+    # --- стандартная логика ---
     logs = get_habit_logs(hid, c.from_user.id)
 
     from datetime import datetime
@@ -893,7 +913,7 @@ async def choose_action(c: CallbackQuery):
     kb = []
 
     for d in days:
-        if d not in used_days:  # 🔥 ВАЖНО
+        if d not in used_days:
             kb.append([
                 InlineKeyboardButton(
                     text=d,
@@ -1129,9 +1149,10 @@ async def reminder_worker():
             try:
                 days_list = days.split(",")
 
-                habit_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][habit_time.weekday()]
+                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][now.weekday()]
 
-                if habit_day not in days_list:
+                # ❌ не тот день
+                if current_day not in days_list:
                     continue
 
                 # ❌ уже выполнено / пропущено сегодня
@@ -1146,27 +1167,32 @@ async def reminder_worker():
                 if already_done:
                     continue
 
-                # --- время ---
+                # --- время привычки ---
                 h, m = map(int, time.split(":"))
                 habit_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+                # ❌ если время уже прошло сегодня — пропускаем
+                if habit_time < now:
+                    continue
 
                 remind_time = habit_time - timedelta(minutes=reminder)
 
                 diff = (now - remind_time).total_seconds()
 
-                # 🔥 ключ дня
+                # 🔥 окно 5 минут (чтобы не пропускало)
+                if not (0 <= diff <= 300):
+                    continue
+
                 day_key = f"{today_str}_{current_day}"
 
-                # ❌ уже отправляли сегодня
+                # ❌ уже отправляли
                 if was_reminded_today(hid, uid, day_key):
                     continue
 
-                # ✅ отправляем
-                if -30 <= diff <= 90:
-                    await bot.send_message(uid, f"⏰ Напоминание: {name}")
+                # ✅ отправка
+                await bot.send_message(uid, f"⏰ Напоминание: {name}")
 
-                    # 🔥 фикс от спама
-                    mark_reminded(hid, uid, day_key)
+                mark_reminded(hid, uid, day_key)
 
             except Exception as e:
                 print("Reminder error:", e)
