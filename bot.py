@@ -1155,7 +1155,7 @@ async def reminder_worker():
                 if current_day not in days_list:
                     continue
 
-                # ❌ уже выполнено / пропущено сегодня
+                # ❌ уже выполнено / пропущено
                 logs = get_habit_logs(hid, uid)
 
                 already_done = False
@@ -1171,16 +1171,15 @@ async def reminder_worker():
                 h, m = map(int, time.split(":"))
                 habit_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
 
-                # ❌ если время уже прошло сегодня — пропускаем
-                if habit_time < now:
-                    continue
-
+                # --- время напоминания ---
                 remind_time = habit_time - timedelta(minutes=reminder)
 
-                diff = (now - remind_time).total_seconds()
+                # ✅ ГЛАВНАЯ ЛОГИКА
+                if now < remind_time:
+                    continue
 
-                # 🔥 окно 5 минут (чтобы не пропускало)
-                if not (0 <= diff <= 300):
+                # ❌ если уже сильно поздно (прошло больше 10 минут)
+                if (now - remind_time).total_seconds() > 600:
                     continue
 
                 day_key = f"{today_str}_{current_day}"
@@ -1197,7 +1196,7 @@ async def reminder_worker():
             except Exception as e:
                 print("Reminder error:", e)
 
-        await asyncio.sleep(30)     
+        await asyncio.sleep(20)     
 # =========================
 # СТАРТ
 # =========================
