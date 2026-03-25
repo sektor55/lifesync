@@ -1324,23 +1324,29 @@ async def reminder_worker():
                     print("🕒 USER NOW:", user_now)
                     print("🔔 REMIND TIME:", remind_time)
 
+                    diff = (user_now - remind_time).total_seconds()
+                    print("📊 DIFF:", diff)
+
+                    # ❗ ЖЁСТКАЯ ЗАЩИТА ОТ РАННИХ/СТАРЫХ СРАБАТЫВАНИЙ
+                    if diff < 0:
+                        continue  # ещё рано
+
+                    if diff > 60:
+                        continue  # уже слишком поздно (старый мусор)
+
                     # анти-дубль
                     key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
                     if key in sent:
                         continue
 
-                    # ✅ стабильное окно (с защитой от рестартов)
-                    diff = (user_now - remind_time).total_seconds()
+                    print("✅ SENDING REMINDER:", name)
 
-                    if 0 <= diff <= 60:
-                        print("✅ SENDING REMINDER:", name)
+                    await bot.send_message(
+                        user_id,
+                        f"⏰ Напоминание: {name}"
+                    )
 
-                        await bot.send_message(
-                            user_id,
-                            f"⏰ Напоминание: {name}"
-                        )
-
-                        sent.add(key)
+                    sent.add(key)
 
                 except Exception as e:
                     print("❌ HABIT ERROR:", e)
@@ -1348,7 +1354,6 @@ async def reminder_worker():
         except Exception as e:
             print("❌ WORKER ERROR:", e)
 
-        # ✅ частая проверка
         await asyncio.sleep(1)
 
 
