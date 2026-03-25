@@ -1,6 +1,7 @@
 import asyncio
 import re
 
+import aiohttp
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -542,16 +543,22 @@ def get_hours_kb():
     kb = []
     row = []
 
-    for h in range(1, 24):
-        row.append(InlineKeyboardButton(text=f"{h:02d}", callback_data=f"hour_{h:02d}"))
+    for h in range(0, 24):
+        row.append(InlineKeyboardButton(
+            text=f"{h:02d}",
+            callback_data=f"hour_{h:02d}"
+        ))
         if len(row) == 6:
             kb.append(row)
             row = []
 
-    row.append(InlineKeyboardButton(text="00", callback_data="hour_00"))
-    kb.append(row)
+    if row:
+        kb.append(row)
 
-    kb.append([InlineKeyboardButton(text="Пропустить", callback_data="skip_time")])
+    kb.append([
+        InlineKeyboardButton(text="❌ Без времени", callback_data="skip_time")
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -655,6 +662,19 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
     sorted_days = [d for d in DAYS if d in data["days"]]
 
     tz = get_user_timezone(c.from_user.id)
+
+    if tz is None:
+        if isinstance(c, CallbackQuery):
+            await c.message.answer(
+                "📍 Сначала отправь геолокацию",
+                reply_markup=request_location_kb()
+            )
+        else:
+            await c.answer(
+                "📍 Сначала отправь геолокацию",
+                reply_markup=request_location_kb()
+            )
+        return
 
     add_habit(
         user_id=c.from_user.id,
@@ -1246,11 +1266,6 @@ async def reminder_worker():
         
 from datetime import datetime
 
-def get_user_tz():
-    now = datetime.now()
-    utc = datetime.utcnow()
-    import time
-    return int(time.localtime().tm_gmtoff // 3600)
 
 def request_location_kb():
     return ReplyKeyboardMarkup(
@@ -1266,17 +1281,19 @@ async def save_location(m: Message):
     lat = m.location.latitude
     lon = m.location.longitude
 
-    import requests
-
-    url = f"http://api.timezonedb.com/v2.1/get-time-zone?key=YOUR_KEY&format=json&by=position&lat={lat}&lng={lon}"
-
-    r = requests.get(url).json()
-
-    tz_offset = int(r["gmtOffset"] // 3600)
+    tz_offset = await get_timezone(lat, lon)
 
     save_user_timezone(m.from_user.id, tz_offset)
 
-    await m.answer(f"✅ Часовой пояс установлен: UTC{tz_offset:+}")    
+    await m.answer(f"✅ Часовой пояс установлен: UTC{tz_offset:+}") 
+
+async def get_timezone(lat, lon):
+    url = f"http://api.timezonedb.com/v2.1/get-time-zone?key=YOUR_KEY&format=json&by=position&lat={lat}&lng={lon}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
+            return int(data["gmtOffset"] // 3600)    
     
 # =========================
 # СТАРТ
