@@ -1328,15 +1328,14 @@ async def set_timezone(c: CallbackQuery):
     add_user(c.from_user.id)
     save_user_timezone(c.from_user.id, tz)
 
-    # удаляем сообщение с кнопками (чтобы не баговало)
+    # 🔥 удаляем сообщение с кнопками
     try:
         await c.message.delete()
     except:
         pass
 
-    await c.message.answer(
-        f"✅ Время установлено (МСК {tz - 3:+d})"
-    )
+    # 🔥 отправляем ДВА сообщения (гарантия)
+    await c.message.answer(f"✅ Время установлено (МСК {tz - 3:+d})")
 
     await c.message.answer(
         "🏠 Главное меню",
