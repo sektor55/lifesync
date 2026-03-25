@@ -1277,13 +1277,7 @@ async def reminder_worker():
 
     while True:
         try:
-            from datetime import datetime, timedelta, timezone
-
-            # 🔥 правильное текущее время
-            now_utc = datetime.now(timezone.utc)
-
-            # Москва (фиксировано)
-            now_msk = now_utc.astimezone(timezone(timedelta(hours=3)))
+            now_utc = datetime.utcnow()
 
             cur.execute("""
                 SELECT rowid, user_id, name, days, time, reminder, tz
@@ -1299,17 +1293,15 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # 👉 время пользователя
-                    user_now = now_msk + timedelta(hours=tz)
+                    # ✅ ИСПРАВЛЕНО (одно смещение)
+                    user_now = datetime.utcnow() + timedelta(hours=tz)
 
-                    # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
                     if today not in days.split(","):
                         continue
 
-                    # 👉 время привычки
                     hour, minute = map(int, time_str.split(":"))
 
                     habit_time = user_now.replace(
@@ -1319,16 +1311,13 @@ async def reminder_worker():
                         microsecond=0
                     )
 
-                    # 👉 время напоминания
                     if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
 
-                    # 👉 разница
                     diff = (user_now - remind_time).total_seconds()
 
-                    # 👉 уникальный ключ
                     unique_key = (
                         user_id,
                         name,
@@ -1342,16 +1331,14 @@ async def reminder_worker():
 📊 DIFF: {diff}
 """)
 
-                    # 🔥 ИДЕАЛЬНОЕ окно
-                    if 0 <= diff <= 30 and unique_key not in sent:
-
+                    # ✅ окно срабатывания
+                    if -5 <= diff <= 30 and unique_key not in sent:
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
                         )
 
                         print("✅ SENT:", name)
-
                         sent.add(unique_key)
 
                 except Exception as e:
