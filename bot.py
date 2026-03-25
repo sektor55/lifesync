@@ -113,6 +113,10 @@ def stats_menu():
 # =========================
 @dp.message(CommandStart())
 async def start(m: Message):
+    # 🔍 дебаг БД
+    cur.execute("SELECT time, reminder, tz FROM habits")
+    print("HABITS:", cur.fetchall())
+
     add_user(m.from_user.id)
 
     tz = get_user_timezone(m.from_user.id)
@@ -139,7 +143,7 @@ async def start(m: Message):
 # =========================
 @dp.callback_query(F.data == "budget")
 async def budget(c: CallbackQuery):
-    await c.message.edit_text("📊 Бюджет", reply_markup=budget_menu())
+    await c.message.edit_text("📊 Финансы", reply_markup=budget_menu())
 
 
 @dp.callback_query(F.data == "back_main")
@@ -1298,7 +1302,7 @@ async def reminder_worker():
                     habit_time = user_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
                     # если есть reminder → считаем время напоминания
-                    if reminder:
+                    if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
@@ -1384,8 +1388,10 @@ async def open_habits(m: Message):
     
 @dp.message(F.text == "📊 Аналитика")
 async def open_stats(m: Message):
+    text = get_stats_text(m.from_user.id)  # твоя функция статистики
+
     await m.answer(
-        "📊 Аналитика",
+        text,
         reply_markup=stats_menu()
     )    
 # =========================

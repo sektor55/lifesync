@@ -16,8 +16,6 @@ def budget_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💸 Расход", callback_data="expense")],
         [InlineKeyboardButton(text="💰 Доход", callback_data="income")],
-        [InlineKeyboardButton(text="📈 Аналитика", callback_data="stats")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
 def categories_menu():
@@ -35,7 +33,6 @@ def habits_menu():
         [InlineKeyboardButton(text="➕ Добавить", callback_data="habit_add")],
         [InlineKeyboardButton(text="📋 Мои", callback_data="habit_list")],
         [InlineKeyboardButton(text="📊 Прогресс", callback_data="habit_progress")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
 def family_menu():
@@ -51,7 +48,6 @@ def stats_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 График расходов", callback_data="graph_expense")],
         [InlineKeyboardButton(text="📈 График доходов", callback_data="graph_income")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
     ])
     
 def timezone_kb():
