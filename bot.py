@@ -113,27 +113,22 @@ def stats_menu():
 # =========================
 @dp.message(CommandStart())
 async def start(m: Message):
-    user = get_user(m.from_user.id)
-
-    if not user:
-        add_user(m.from_user.id)
+    # 🔥 всегда создаём пользователя (без if)
+    add_user(m.from_user.id)
 
     tz = get_user_timezone(m.from_user.id)
 
-    # 🔥 первый вход — выбор timezone
     if tz is None:
         await m.answer(
             "👋 Добро пожаловать в LifeSync!\n\n"
-            "Я помогу тебе:\n"
             "💰 Финансы\n"
             "🏋️ Привычки\n"
             "📊 Аналитика\n\n"
-            "📌 Выбери часовой пояс:",
+            "Выбери время относительно МСК:",
             reply_markup=timezone_kb()
         )
         return
 
-    # 🔥 ВСЕГДА открываем меню если tz есть
     await m.answer(
         "🏠 Главное меню",
         reply_markup=main_menu()
@@ -1331,14 +1326,22 @@ async def set_timezone(c: CallbackQuery):
 
     tz = int(c.data.split("_")[1])
 
+    # 🔥 гарантируем что пользователь есть
+    add_user(c.from_user.id)
+
     save_user_timezone(c.from_user.id, tz)
 
-    # 🔥 сначала подтверждение
-    await c.message.edit_text(
-        f"✅ Часовой пояс установлен: UTC {tz:+d}"
+    # 🔥 удаляем старое сообщение (важно)
+    try:
+        await c.message.delete()
+    except:
+        pass
+
+    # 🔥 новое сообщение (гарантия отображения)
+    await c.message.answer(
+        f"✅ Время установлено (МСК {tz - 3:+d})"
     )
 
-    # 🔥 потом ВСЕГДА новое сообщение с меню
     await c.message.answer(
         "🏠 Главное меню",
         reply_markup=main_menu()
