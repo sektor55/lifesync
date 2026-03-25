@@ -1294,7 +1294,8 @@ async def reminder_worker():
                         continue
 
                     # 👉 текущее время пользователя
-                    user_now = now_utc + timedelta(hours=tz)
+                    now_msk = datetime.utcnow() + timedelta(hours=3)
+                    user_now = now_msk + timedelta(hours=tz))
 
                     # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
