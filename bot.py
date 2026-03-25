@@ -1277,7 +1277,13 @@ async def reminder_worker():
 
     while True:
         try:
-            now_utc = datetime.utcnow()
+            from datetime import datetime, timedelta, timezone
+
+            # 🔥 правильное текущее время
+            now_utc = datetime.now(timezone.utc)
+
+            # Москва (фиксировано)
+            now_msk = now_utc.astimezone(timezone(timedelta(hours=3)))
 
             cur.execute("""
                 SELECT rowid, user_id, name, days, time, reminder, tz
@@ -1293,9 +1299,8 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # 👉 текущее время пользователя
-                    now_msk = datetime.utcnow() + timedelta(hours=3)
-                    user_now = now_msk + timedelta(hours=tz))
+                    # 👉 время пользователя
+                    user_now = now_msk + timedelta(hours=tz)
 
                     # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -1320,10 +1325,10 @@ async def reminder_worker():
                     else:
                         remind_time = habit_time
 
-                    # 👉 разница во времени (ключевая логика)
+                    # 👉 разница
                     diff = (user_now - remind_time).total_seconds()
 
-                    # 👉 уникальный ключ (чтобы не спамить)
+                    # 👉 уникальный ключ
                     unique_key = (
                         user_id,
                         name,
@@ -1337,8 +1342,8 @@ async def reminder_worker():
 📊 DIFF: {diff}
 """)
 
-                    # ✅ ИДЕАЛЬНОЕ ОКНО СРАБАТЫВАНИЯ
-                    if -5 <= diff <= 30 and unique_key not in sent:
+                    # 🔥 ИДЕАЛЬНОЕ окно
+                    if 0 <= diff <= 30 and unique_key not in sent:
 
                         await bot.send_message(
                             user_id,
