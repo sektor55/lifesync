@@ -1366,6 +1366,28 @@ async def sub_menu(m: Message):
         "💎 Подписка\n\n"
         "🚧 Скоро здесь будет PRO-функционал"
     )   
+    
+    
+@dp.message(F.text == "💰 Финансы")
+async def open_finance(m: Message):
+    await m.answer(
+        "💰 Финансы",
+        reply_markup=budget_menu()
+    )
+
+@dp.message(F.text == "🏋️ Привычки")
+async def open_habits(m: Message):
+    await m.answer(
+        "🏋️ Привычки",
+        reply_markup=habits_menu()
+    )    
+    
+@dp.message(F.text == "📊 Аналитика")
+async def open_stats(m: Message):
+    await m.answer(
+        "📊 Аналитика",
+        reply_markup=stats_menu()
+    )    
 # =========================
 # СТАРТ
 # =========================
