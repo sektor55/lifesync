@@ -704,8 +704,10 @@ async def set_time(m: Message, state: FSMContext):
     )
 
     
-async def finish_habit_creation(user_id, state):
+async def finish_habit_creation(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
+    user_id = c.from_user.id  # 🔥 ВОТ ЭТО КЛЮЧ
 
     name = data.get("name")
     days = data.get("days")
@@ -714,7 +716,6 @@ async def finish_habit_creation(user_id, state):
     task_type = data.get("task_type")
     reminder = data.get("reminder")
 
-    # 🔥 ВАЖНО — берём timezone пользователя
     tz = get_user_timezone(user_id)
 
     add_habit(
@@ -729,7 +730,10 @@ async def finish_habit_creation(user_id, state):
         tz=tz
     )
 
-    await state.clear()   
+    await state.clear()
+
+    await c.message.answer("✅ Привычка создана")
+    await c.answer() 
 
 
 @dp.callback_query(AddHabit.task_type)
