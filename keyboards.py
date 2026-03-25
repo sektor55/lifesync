@@ -54,23 +54,24 @@ def stats_menu():
     ])
     
 def timezone_kb():
-    kb = InlineKeyboardMarkup(inline_keyboard=[])
+    buttons = []
 
     for i in range(-12, 13):
         sign = "+" if i >= 0 else ""
         text = f"UTC {sign}{i}"
 
-        # Москва = UTC+3
         msk_diff = i - 3
         msk_sign = "+" if msk_diff >= 0 else ""
+        text += f"\nМСК {msk_sign}{msk_diff}"
 
-        text += f" (МСК {msk_sign}{msk_diff})"
-
-        kb.inline_keyboard.append([
+        buttons.append(
             InlineKeyboardButton(
                 text=text,
                 callback_data=f"tz_{i}"
             )
-        ])
+        )
 
-    return kb    
+    # 🔥 делаем по 4 кнопки в строке
+    kb_rows = [buttons[i:i+4] for i in range(0, len(buttons), 4)]
+
+    return InlineKeyboardMarkup(inline_keyboard=kb_rows)

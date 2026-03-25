@@ -120,19 +120,20 @@ async def start(m: Message):
 
     tz = get_user_timezone(m.from_user.id)
 
-    # 🔥 если timezone не выбран — показываем выбор
+    # 🔥 первый вход — выбор timezone
     if tz is None:
         await m.answer(
             "👋 Добро пожаловать в LifeSync!\n\n"
             "Я помогу тебе:\n"
-            "💰 контролировать финансы\n"
-            "🏋️ отслеживать привычки\n"
-            "📊 смотреть аналитику\n\n"
-            "📌 Для начала выбери свой часовой пояс:",
+            "💰 Финансы\n"
+            "🏋️ Привычки\n"
+            "📊 Аналитика\n\n"
+            "📌 Выбери часовой пояс:",
             reply_markup=timezone_kb()
         )
         return
 
+    # 🔥 ВСЕГДА открываем меню если tz есть
     await m.answer(
         "🏠 Главное меню",
         reply_markup=main_menu()
@@ -1260,59 +1261,68 @@ def reminder_kb():
         [InlineKeyboardButton(text="❌ Без напоминаний", callback_data="rem_skip")]
     ])
     
+import asyncio
+from datetime import datetime, timedelta
+
+from database import cur
+from bot import bot
+
+
 async def reminder_worker():
-    from datetime import datetime, timedelta
-
     while True:
-        now_utc = datetime.utcnow()
+        try:
+            now_utc = datetime.utcnow()
 
-        cur.execute("""
-            SELECT rowid, user_id, name, days, time, reminder, tz
-            FROM habits
-            WHERE time IS NOT NULL AND reminder IS NOT NULL
-        """)
+            # 🔥 берём ВСЁ включая timezone
+            cur.execute("""
+                SELECT rowid, user_id, name, days, time, reminder, tz
+                FROM habits
+                WHERE time IS NOT NULL
+            """)
+            habits = cur.fetchall()
 
-        habits = cur.fetchall()
+            for habit in habits:
+                try:
+                    rowid, user_id, name, days, time_str, reminder, tz = habit
 
-        for hid, uid, name, days, time, reminder, tz in habits:
-            try:
-                user_now = now_utc + timedelta(hours=tz)
+                    if not time_str:
+                        continue
 
-                current_day = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"][user_now.weekday()]
+                    # текущее время пользователя
+                    user_now = now_utc + timedelta(hours=tz)
 
-                if current_day not in days.split(","):
-                    continue
+                    # день недели
+                    weekday = str(user_now.weekday())  # 0-6
 
-                today_str = user_now.strftime("%Y-%m-%d")
+                    habit_days = days.split(",")
 
-                logs = get_habit_logs(hid, uid)
-                if any(log[0].startswith(today_str) for log in logs):
-                    continue
+                    if weekday not in habit_days:
+                        continue
 
-                h, m = map(int, time.split(":"))
-                habit_time = user_now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    # время привычки
+                    hour, minute = map(int, time_str.split(":"))
+                    habit_time = user_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-                remind_time = habit_time - timedelta(minutes=reminder)
+                    # если есть reminder → считаем время напоминания
+                    if reminder:
+                        remind_time = habit_time - timedelta(minutes=reminder)
+                    else:
+                        remind_time = habit_time
 
-                # ✅ КЛЮЧЕВОЕ — окно в 60 секунд
-                if not (remind_time <= user_now <= remind_time + timedelta(seconds=60)):
-                    continue
+                    # 🔥 ОКНО 60 СЕКУНД (чтобы не пропускать)
+                    if remind_time <= user_now <= remind_time + timedelta(seconds=60):
+                        await bot.send_message(
+                            user_id,
+                            f"⏰ Напоминание: {name}"
+                        )
 
-                day_key = f"{today_str}_{current_day}"
+                except Exception as e:
+                    print("HABIT ERROR:", e)
 
-                if was_reminded_today(hid, uid, day_key):
-                    continue
+        except Exception as e:
+            print("WORKER ERROR:", e)
 
-                await bot.send_message(uid, f"⏰ Напоминание: {name}")
-
-                mark_reminded(hid, uid, day_key)
-
-            except Exception as e:
-                print("Reminder error:", e)
-
-        await asyncio.sleep(10)     
-        
-from datetime import datetime
+        await asyncio.sleep(10)
 
 
 @dp.callback_query(F.data.startswith("tz_"))
@@ -1323,10 +1333,12 @@ async def set_timezone(c: CallbackQuery):
 
     save_user_timezone(c.from_user.id, tz)
 
+    # 🔥 сначала подтверждение
     await c.message.edit_text(
         f"✅ Часовой пояс установлен: UTC {tz:+d}"
     )
 
+    # 🔥 потом ВСЕГДА новое сообщение с меню
     await c.message.answer(
         "🏠 Главное меню",
         reply_markup=main_menu()
