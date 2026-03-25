@@ -456,6 +456,8 @@ async def habits_menu_handler(c: CallbackQuery):
 
 @dp.callback_query(F.data == "habit_add")
 async def habit_add_start(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     await state.set_state(AddHabit.name)
     await c.message.answer("Введите название привычки")
 
@@ -504,6 +506,8 @@ def get_days_kb(selected):
 
 @dp.callback_query(AddHabit.type, F.data.startswith("habit_type"))
 async def habit_type(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     h_type = "personal" if "personal" in c.data else "family"
     await state.update_data(type=h_type, days=[])
 
@@ -519,6 +523,8 @@ async def habit_type(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(AddHabit.days, F.data.startswith("day_"))
 async def toggle_days(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     data = await state.get_data()
     days = data.get("days", [])
 
@@ -589,6 +595,8 @@ def get_minutes_kb(hour):
 
 @dp.callback_query(AddHabit.days, F.data == "days_done")
 async def days_done(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     data = await state.get_data()
 
     if not data.get("days"):
@@ -605,6 +613,8 @@ async def days_done(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(AddHabit.time, F.data.startswith("hour_"))
 async def select_hour(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     hour = c.data.split("_")[1]
 
     await c.message.edit_text(
@@ -615,7 +625,10 @@ async def select_hour(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(AddHabit.time, F.data == "skip_time")
 async def skip_time(c: CallbackQuery, state: FSMContext):
-    await state.update_data(time=None)
+    await c.answer()
+
+    await state.update_data(time=None, reminder=None)
+
     await finish_habit_creation(c, state)
     
     
@@ -623,6 +636,8 @@ async def skip_time(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(AddHabit.time, F.data.startswith("min_"))
 async def select_minute(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     _, hour, minute = c.data.split("_")
     time = f"{hour}:{minute}"
 
@@ -635,6 +650,8 @@ async def select_minute(c: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("rem_"))
 async def set_reminder(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     if c.data == "rem_skip":
         reminder = None
     else:
@@ -653,7 +670,10 @@ async def set_time(m: Message, state: FSMContext):
 
     await state.update_data(time=m.text)
 
-    await finish_habit_creation(m, state)  # ← ВСТАВИТЬ
+    await m.answer(
+        "Включить напоминание?",
+        reply_markup=reminder_kb()
+    )
 
     
 async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
@@ -698,6 +718,8 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
 
 @dp.callback_query(AddHabit.task_type)
 async def set_task_type(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
     task_type = "cycle" if "cycle" in c.data else "once"
 
     await state.update_data(task_type=task_type, days=[])
