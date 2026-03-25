@@ -1273,9 +1273,12 @@ from bot import bot
 async def reminder_worker():
     sent = set()
 
+    print("🚀 WORKER STARTED")
+
     while True:
         try:
             now_utc = datetime.utcnow()
+            print("⏱ WORKER TICK:", now_utc)
 
             cur.execute("""
                 SELECT rowid, user_id, name, days, time, reminder, tz
@@ -1283,6 +1286,8 @@ async def reminder_worker():
                 WHERE time IS NOT NULL
             """)
             habits = cur.fetchall()
+
+            print("📦 HABITS:", habits)
 
             for habit in habits:
                 try:
@@ -1316,26 +1321,34 @@ async def reminder_worker():
                     else:
                         remind_time = habit_time
 
+                    print("🕒 USER NOW:", user_now)
+                    print("🔔 REMIND TIME:", remind_time)
+
                     # анти-дубль
                     key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
                     if key in sent:
                         continue
 
-                    # ✅ ЧЁТКО В МОМЕНТ
-                    if 0 <= (user_now - remind_time).total_seconds() <= 2:
+                    # ✅ стабильное окно (с защитой от рестартов)
+                    diff = (user_now - remind_time).total_seconds()
+
+                    if 0 <= diff <= 60:
+                        print("✅ SENDING REMINDER:", name)
+
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
                         )
+
                         sent.add(key)
 
                 except Exception as e:
-                    print("HABIT ERROR:", e)
+                    print("❌ HABIT ERROR:", e)
 
         except Exception as e:
-            print("WORKER ERROR:", e)
+            print("❌ WORKER ERROR:", e)
 
-        # ✅ проверяем каждую секунду
+        # ✅ частая проверка
         await asyncio.sleep(1)
 
 
