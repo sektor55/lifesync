@@ -1,11 +1,15 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Бюджет", callback_data="budget")],
-        [InlineKeyboardButton(text="🏋️ Привычки", callback_data="habits")],
-        [InlineKeyboardButton(text="👨‍👩‍👧 Семья", callback_data="family")],
-    ])
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💰 Финансы")],
+            [KeyboardButton(text="🏋️ Привычки")],
+            [KeyboardButton(text="📊 Аналитика")],
+            [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="💎 Подписка")]
+        ],
+        resize_keyboard=True
+    )
 
 def budget_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -48,3 +52,25 @@ def stats_menu():
         [InlineKeyboardButton(text="📈 График доходов", callback_data="graph_income")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
     ])
+    
+def timezone_kb():
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+
+    for i in range(-12, 13):
+        sign = "+" if i >= 0 else ""
+        text = f"UTC {sign}{i}"
+
+        # Москва = UTC+3
+        msk_diff = i - 3
+        msk_sign = "+" if msk_diff >= 0 else ""
+
+        text += f" (МСК {msk_sign}{msk_diff})"
+
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(
+                text=text,
+                callback_data=f"tz_{i}"
+            )
+        ])
+
+    return kb    

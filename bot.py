@@ -113,7 +113,30 @@ def stats_menu():
 # =========================
 @dp.message(CommandStart())
 async def start(m: Message):
-    await m.answer("🚀 LifeSync", reply_markup=main_menu())
+    user = get_user(m.from_user.id)
+
+    if not user:
+        add_user(m.from_user.id)
+
+    tz = get_user_timezone(m.from_user.id)
+
+    # 🔥 если timezone не выбран — показываем выбор
+    if tz is None:
+        await m.answer(
+            "👋 Добро пожаловать в LifeSync!\n\n"
+            "Я помогу тебе:\n"
+            "💰 контролировать финансы\n"
+            "🏋️ отслеживать привычки\n"
+            "📊 смотреть аналитику\n\n"
+            "📌 Для начала выбери свой часовой пояс:",
+            reply_markup=timezone_kb()
+        )
+        return
+
+    await m.answer(
+        "🏠 Главное меню",
+        reply_markup=main_menu()
+    )
 
 
 # =========================
@@ -691,15 +714,9 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
 
     if tz is None:
         if isinstance(c, CallbackQuery):
-            await c.message.answer(
-                "📍 Сначала отправь геолокацию",
-                reply_markup=request_location_kb()
-            )
+            await c.message.answer("⚠️ Сначала выбери часовой пояс через настройки")
         else:
-            await c.answer(
-                "📍 Сначала отправь геолокацию",
-                reply_markup=request_location_kb()
-            )
+            await c.answer("⚠️ Сначала выбери часовой пояс через настройки")
         return
 
     add_habit(
@@ -717,7 +734,10 @@ async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
     await state.clear()
 
     if isinstance(c, CallbackQuery):
-        await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
+        try:
+            await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
+        except:
+            await c.message.answer("🏋️ Привычки", reply_markup=habits_menu())
     else:
         await c.answer("🏋️ Привычки", reply_markup=habits_menu())    
 
@@ -1295,34 +1315,47 @@ async def reminder_worker():
 from datetime import datetime
 
 
-def request_location_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📍 Отправить локацию", request_location=True)]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
+@dp.callback_query(F.data.startswith("tz_"))
+async def set_timezone(c: CallbackQuery):
+    await c.answer()
+
+    tz = int(c.data.split("_")[1])
+
+    save_user_timezone(c.from_user.id, tz)
+
+    await c.message.edit_text(
+        f"✅ Часовой пояс установлен: UTC {tz:+d}"
     )
 
-@dp.message(F.location)
-async def save_location(m: Message):
-    lat = m.location.latitude
-    lon = m.location.longitude
+    await c.message.answer(
+        "🏠 Главное меню",
+        reply_markup=main_menu()
+    )
 
-    tz_offset = await get_timezone(lat, lon)
+@dp.message(F.text == "⚙️ Настройки")
+async def settings_menu(m: Message):
+    await m.answer(
+        "⚙️ Настройки",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="settings_tz")]
+        ])
+    )
 
-    save_user_timezone(m.from_user.id, tz_offset)
+@dp.callback_query(F.data == "settings_tz")
+async def settings_timezone(c: CallbackQuery):
+    await c.answer()
 
-    await m.answer(f"✅ Часовой пояс установлен: UTC{tz_offset:+}") 
-
-async def get_timezone(lat, lon):
-    url = f"http://api.timezonedb.com/v2.1/get-time-zone?key=YOUR_KEY&format=json&by=position&lat={lat}&lng={lon}"
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            data = await resp.json()
-            return int(data["gmtOffset"] // 3600)    
-    
+    await c.message.edit_text(
+        "Выбери новый часовой пояс:",
+        reply_markup=timezone_kb()
+    )
+   
+@dp.message(F.text == "💎 Подписка")
+async def sub_menu(m: Message):
+    await m.answer(
+        "💎 Подписка\n\n"
+        "🚧 Скоро здесь будет PRO-функционал"
+    )   
 # =========================
 # СТАРТ
 # =========================

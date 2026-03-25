@@ -36,6 +36,15 @@ def init_habits_update():
         cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
     except:
         pass    
+        
+        
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY,
+        timezone INTEGER
+    )
+    """)
+    conn.commit()    
 
     # 🔥 ВОТ СЮДА ДОБАВЛЯЕМ
     cur.execute("""
@@ -214,4 +223,22 @@ def mark_reminded(habit_id, user_id, day_key):
     """, (habit_id, user_id, day_key))
     conn.commit()
     
-  
+def add_user(user_id):
+    cur.execute("INSERT OR IGNORE INTO users (id, timezone) VALUES (?, ?)", (user_id, None))
+    conn.commit()
+
+
+def get_user(user_id):
+    cur.execute("SELECT id FROM users WHERE id=?", (user_id,))
+    return cur.fetchone()
+
+
+def save_user_timezone(user_id, tz):
+    cur.execute("UPDATE users SET timezone=? WHERE id=?", (tz, user_id))
+    conn.commit()
+
+
+def get_user_timezone(user_id):
+    cur.execute("SELECT timezone FROM users WHERE id=?", (user_id,))
+    res = cur.fetchone()
+    return res[0] if res else None    
