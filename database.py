@@ -155,8 +155,8 @@ conn.commit()
 
 def add_habit(user_id, name, days, h_type, time, task_type, family_id=None, reminder=None, tz=0):
     cur.execute("""
-        INSERT INTO habits(user_id, name, days, type, time, task_type, family_id, reminder, tz)
-        VALUES(?,?,?,?,?,?,?,?,?)
+        INSERT INTO habits (user_id, name, days, type, time, task_type, family_id, reminder, tz)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (user_id, name, days, h_type, time, task_type, family_id, reminder, tz))
     conn.commit()
 

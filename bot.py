@@ -704,41 +704,32 @@ async def set_time(m: Message, state: FSMContext):
     )
 
     
-async def finish_habit_creation(c: CallbackQuery | Message, state: FSMContext):
+async def finish_habit_creation(user_id, state):
     data = await state.get_data()
 
-    sorted_days = [d for d in DAYS if d in data["days"]]
+    name = data.get("name")
+    days = data.get("days")
+    h_type = data.get("type")
+    time = data.get("time")
+    task_type = data.get("task_type")
+    reminder = data.get("reminder")
 
-    tz = get_user_timezone(c.from_user.id)
-
-    if tz is None:
-        if isinstance(c, CallbackQuery):
-            await c.message.answer("⚠️ Сначала выбери часовой пояс через настройки")
-        else:
-            await c.answer("⚠️ Сначала выбери часовой пояс через настройки")
-        return
+    # 🔥 ВАЖНО — берём timezone пользователя
+    tz = get_user_timezone(user_id)
 
     add_habit(
-        user_id=c.from_user.id,
-        name=data["name"],
-        days=",".join(sorted_days),
-        h_type=data["type"],
-        time=data.get("time"),
-        task_type=data.get("task_type"),
+        user_id,
+        name,
+        days,
+        h_type,
+        time,
+        task_type,
         family_id=None,
-        reminder=data.get("reminder"),
+        reminder=reminder,
         tz=tz
     )
 
-    await state.clear()
-
-    if isinstance(c, CallbackQuery):
-        try:
-            await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
-        except:
-            await c.message.answer("🏋️ Привычки", reply_markup=habits_menu())
-    else:
-        await c.answer("🏋️ Привычки", reply_markup=habits_menu())    
+    await state.clear()   
 
 
 @dp.callback_query(AddHabit.task_type)
@@ -1269,53 +1260,40 @@ from bot import bot
 async def reminder_worker():
     while True:
         try:
-            now_utc = datetime.utcnow()
-
-            # 🔥 берём ВСЁ включая timezone
-            cur.execute("""
-                SELECT rowid, user_id, name, days, time, reminder, tz
-                FROM habits
-                WHERE time IS NOT NULL
-            """)
-            habits = cur.fetchall()
+            habits = get_all_habits_with_time()
 
             for habit in habits:
-                try:
-                    rowid, user_id, name, days, time_str, reminder, tz = habit
+                habit_id, user_id, name, days, time_str, reminder, tz = habit
 
-                    if not time_str:
-                        continue
+                # текущее время пользователя
+                user_now = datetime.utcnow() + timedelta(hours=tz)
 
-                    # текущее время пользователя
-                    user_now = now_utc + timedelta(hours=tz)
+                # день недели (0=ПН)
+                weekday = user_now.weekday()
 
-                    # день недели
-                    weekday = str(user_now.weekday())  # 0-6
+                # проверка дня
+                if str(weekday) not in days:
+                    continue
 
-                    habit_days = days.split(",")
+                # время привычки
+                habit_time = datetime.strptime(time_str, "%H:%M").replace(
+                    year=user_now.year,
+                    month=user_now.month,
+                    day=user_now.day
+                )
 
-                    if weekday not in habit_days:
-                        continue
+                # время напоминания
+                if reminder is not None:
+                    remind_time = habit_time - timedelta(minutes=reminder)
+                else:
+                    remind_time = habit_time
 
-                    # время привычки
-                    hour, minute = map(int, time_str.split(":"))
-                    habit_time = user_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-                    # если есть reminder → считаем время напоминания
-                    if reminder is not None:
-                        remind_time = habit_time - timedelta(minutes=reminder)
-                    else:
-                        remind_time = habit_time
-
-                    # 🔥 ОКНО 60 СЕКУНД (чтобы не пропускать)
-                    if remind_time <= user_now <= remind_time + timedelta(seconds=60):
-                        await bot.send_message(
-                            user_id,
-                            f"⏰ Напоминание: {name}"
-                        )
-
-                except Exception as e:
-                    print("HABIT ERROR:", e)
+                # окно 60 секунд
+                if remind_time <= user_now <= remind_time + timedelta(seconds=60):
+                    await bot.send_message(
+                        user_id,
+                        f"🔔 Напоминание: {name}"
+                    )
 
         except Exception as e:
             print("WORKER ERROR:", e)
@@ -1388,12 +1366,44 @@ async def open_habits(m: Message):
     
 @dp.message(F.text == "📊 Аналитика")
 async def open_stats(m: Message):
-    text = get_stats_text(m.from_user.id)  # твоя функция статистики
+    text = get_stats_text(m.from_user.id)
 
     await m.answer(
         text,
         reply_markup=stats_menu()
-    )    
+    )  
+
+def get_stats_text(user_id):
+    expenses = get_expense_stats(user_id)
+    income = get_income_stats(user_id)
+
+    total_expense = sum(x[1] for x in expenses) if expenses else 0
+    total_income = sum(x[1] for x in income) if income else 0
+    balance = total_income - total_expense
+
+    text = "📊 Аналитика\n\n"
+
+    # ДОХОДЫ
+    text += "💰 Доходы:\n"
+    if income:
+        for cat, amount in income:
+            percent = int(amount / total_income * 100) if total_income else 0
+            text += f"{cat} — {amount} ₽ ({percent}%)\n"
+    else:
+        text += "нет данных\n"
+
+    text += "\n💸 Расходы:\n"
+    if expenses:
+        for cat, amount in expenses:
+            percent = int(amount / total_expense * 100) if total_expense else 0
+            text += f"{cat} — {amount} ₽ ({percent}%)\n"
+    else:
+        text += "нет данных\n"
+
+    text += f"\n📈 Баланс: {balance} ₽"
+    text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
+
+    return text    
 # =========================
 # СТАРТ
 # =========================
