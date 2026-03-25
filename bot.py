@@ -716,11 +716,10 @@ async def finish_habit_creation(c: CallbackQuery, state: FSMContext):
     task_type = data.get("task_type")
     reminder = data.get("reminder")
 
-    # 🔥 ФИКС 1 — дни в строку
+    # дни → строка
     if isinstance(days, list):
         days = ",".join(days)
 
-    # 🔥 ФИКС 2 — timezone
     tz = get_user_timezone(user_id)
 
     add_habit(
@@ -737,7 +736,12 @@ async def finish_habit_creation(c: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    await c.message.answer("✅ Привычка создана")
+    # ✅ сообщение + возврат в меню привычек
+    await c.message.answer(
+        "✅ Привычка создана",
+        reply_markup=habits_menu()
+    )
+
     await c.answer()
 
 
@@ -1269,40 +1273,56 @@ from bot import bot
 async def reminder_worker():
     while True:
         try:
-            habits = get_all_habits_with_time()
+            now_utc = datetime.utcnow()
+
+            cur.execute("""
+                SELECT rowid, user_id, name, days, time, reminder, tz
+                FROM habits
+                WHERE time IS NOT NULL
+            """)
+            habits = cur.fetchall()
+
+            print("HABITS:", habits)
 
             for habit in habits:
-                habit_id, user_id, name, days, time_str, reminder, tz = habit
+                try:
+                    rowid, user_id, name, days, time_str, reminder, tz = habit
 
-                # текущее время пользователя
-                user_now = datetime.utcnow() + timedelta(hours=tz)
+                    if not time_str:
+                        continue
 
-                # день недели (0=ПН)
-                weekday = user_now.weekday()
+                    # текущее время пользователя
+                    user_now = now_utc + timedelta(hours=tz)
 
-                # проверка дня
-                if str(weekday) not in days:
-                    continue
+                    weekday = str(user_now.weekday())
+                    habit_days = days.split(",")
 
-                # время привычки
-                habit_time = datetime.strptime(time_str, "%H:%M").replace(
-                    year=user_now.year,
-                    month=user_now.month,
-                    day=user_now.day
-                )
+                    if weekday not in habit_days:
+                        continue
 
-                # время напоминания
-                if reminder is not None:
-                    remind_time = habit_time - timedelta(minutes=reminder)
-                else:
-                    remind_time = habit_time
+                    hour, minute = map(int, time_str.split(":"))
 
-                # окно 60 секунд
-                if remind_time <= user_now <= remind_time + timedelta(seconds=60):
-                    await bot.send_message(
-                        user_id,
-                        f"🔔 Напоминание: {name}"
+                    habit_time = user_now.replace(
+                        hour=hour,
+                        minute=minute,
+                        second=0,
+                        microsecond=0
                     )
+
+                    if reminder is not None:
+                        remind_time = habit_time - timedelta(minutes=reminder)
+                    else:
+                        remind_time = habit_time
+
+                    # 🔥 увеличили окно
+                    if remind_time <= user_now <= remind_time + timedelta(seconds=120):
+                        await bot.send_message(
+                            user_id,
+                            f"⏰ Напоминание: {name}"
+                        )
+
+                except Exception as e:
+                    print("HABIT ERROR:", e)
 
         except Exception as e:
             print("WORKER ERROR:", e)
