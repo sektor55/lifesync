@@ -1480,22 +1480,11 @@ def get_stats_text(user_id):
     text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
 
     return text    
-# =========================
-# СТАРТ
-# =========================
-async def main():
-    asyncio.create_task(reminder_worker(bot))
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-   
+    
 # =========================
 # СЕМЬЯ
 # =========================
-   
-    
+
 @dp.message(F.text == "👥 Семья")
 async def family_menu(m: Message):
     family_id = get_family_id(m.from_user.id)
@@ -1542,4 +1531,18 @@ async def join_family_input(m: Message, state: FSMContext):
 @dp.callback_query(F.data == "leave_family")
 async def leave_family_handler(c: CallbackQuery):
     leave_family(c.from_user.id)
-    await c.message.answer("Ты вышел из семьи")    
+    await c.message.answer("Ты вышел из семьи")
+
+
+# =========================
+# СТАРТ
+# =========================
+
+async def main():
+    asyncio.create_task(reminder_worker(bot))
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())    
+
