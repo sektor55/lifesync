@@ -17,3 +17,7 @@ class Family(StatesGroup):
     create_password = State()
     join_code = State()
     join_password = State()
+    
+class AddIncome(StatesGroup):
+    sum = State()
+    custom = State()    

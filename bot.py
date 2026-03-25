@@ -46,16 +46,18 @@ INCOME_CATEGORIES = {
 # =========================
 def parse_amount(text):
     text = text.replace(",", ".")
+
     matches = re.findall(r"(\d+[.\d]*)\s?(₽|RUB|rub)", text)
     if matches:
         return int(float(matches[0][0]))
 
     nums = re.findall(r"\d+[.\d]*", text)
     nums = [float(n) for n in nums if float(n) > 10]
+
     if not nums:
         return None
 
-    return int(max(nums))
+    return int(nums[-1])  # БЕРЕМ ПОСЛЕДНЕЕ, а не max
 
 
 # =========================
@@ -250,13 +252,20 @@ async def exp_custom(m: Message, state: FSMContext):
 # =========================
 # ДОХОД (НЕ ТРОГАЕМ)
 # =========================
+from aiogram.fsm.state import StatesGroup, State
+
+class AddIncome(StatesGroup):
+    sum = State()
+    custom = State()
+
+
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
-    await state.set_state("income_sum")
+    await state.set_state(AddIncome.sum)
     await c.message.answer("Введите сумму дохода")
 
 
-@dp.message(StateFilter("income_sum"))
+@dp.message(AddIncome.sum)
 async def income_sum(m: Message, state: FSMContext):
     amount = parse_amount(m.text)
 
@@ -270,6 +279,24 @@ async def income_sum(m: Message, state: FSMContext):
 
     await m.answer(
         f"Сумма: {amount} ₽\nКатегория: {category}",
+        reply_markup=confirm_kb("inc")
+    )
+
+
+@dp.callback_query(F.data == "inc_custom")
+async def inc_custom_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(AddIncome.custom)
+    await c.message.answer("Введи категорию")
+
+
+@dp.message(AddIncome.custom)
+async def inc_custom(m: Message, state: FSMContext):
+    data = await state.get_data()
+
+    await state.update_data(category=m.text)
+
+    await m.answer(
+        f"Сумма: {data['amount']} ₽\nКатегория: {m.text}",
         reply_markup=confirm_kb("inc")
     )
 
@@ -313,21 +340,6 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
     )
 
 
-@dp.callback_query(F.data == "inc_custom_handler")
-async def inc_custom_start(c: CallbackQuery, state: FSMContext):
-    await state.set_state("income_custom")
-    await c.message.answer("Введи категорию")
-
-
-@dp.message(StateFilter("income_custom"))
-async def inc_custom(m: Message, state: FSMContext):
-    data = await state.get_data()
-    await state.update_data(category=m.text)
-
-    await m.answer(
-        f"Сумма: {data['amount']} ₽\nКатегория: {m.text}",
-        reply_markup=confirm_kb("inc")
-    )
 
 
 # =========================
@@ -338,31 +350,45 @@ async def stats(c: CallbackQuery):
     expense_data = get_expense_stats(c.from_user.id)
     income_data = get_income_stats(c.from_user.id)
 
+    breakdown_income = get_category_breakdown(c.from_user.id, "income")
+    breakdown_expense = get_category_breakdown(c.from_user.id, "expense")
+
+    users = get_family_members(c.from_user.id)
+
+    profiles = {}
+    for u in users:
+        p = get_user_profile(u)
+        if p:
+            profiles[u] = p[0]
+
     total_expense = sum(x[1] for x in expense_data) if expense_data else 0
     total_income = sum(x[1] for x in income_data) if income_data else 0
-    balance = total_income - total_expense
 
     text = "📊 Аналитика\n\n"
 
+    # ДОХОДЫ
     text += "💰 Доходы:\n"
-    if income_data:
-        for cat, val in income_data:
-            perc = int(val / total_income * 100) if total_income else 0
-            text += f"{cat} — {val} ₽ ({perc}%)\n"
-    else:
-        text += "нет данных\n"
+    for cat, val in income_data:
+        text += f"{cat} — {val} ₽\n"
 
+        users_in_cat = [x for x in breakdown_income if x[0] == cat]
+
+        if len(users_in_cat) > 1:
+            for _, uid, amount in users_in_cat:
+                name = profiles.get(uid, str(uid))
+                text += f"   {name} — {amount}\n"
+
+    # РАСХОДЫ
     text += "\n💸 Расходы:\n"
-    if expense_data:
-        for cat, val in expense_data:
-            perc = int(val / total_expense * 100) if total_expense else 0
-            text += f"{cat} — {val} ₽ ({perc}%)\n"
-    else:
-        text += "нет данных\n"
+    for cat, val in expense_data:
+        text += f"{cat} — {val} ₽\n"
 
-    text += "\n"
-    text += f"📈 Баланс: {balance} ₽\n"
-    text += f"Доход: {total_income} ₽ | Расход: {total_expense} ₽"
+        users_in_cat = [x for x in breakdown_expense if x[0] == cat]
+
+        if len(users_in_cat) > 1:
+            for _, uid, amount in users_in_cat:
+                name = profiles.get(uid, str(uid))
+                text += f"   {name} — {amount}\n"
 
     await c.message.answer(text, reply_markup=stats_menu())
 
@@ -837,6 +863,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     USER_MODE[c.from_user.id] = mode
 
     habits = get_habits(c.from_user.id)
+    users = get_family_members(c.from_user.id)
 
     from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
@@ -854,9 +881,12 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             continue
 
         days_list = days.split(",")
-        logs = get_habit_logs(hid, c.from_user.id)
 
-        log_map = {l[0]: l[1] for l in logs}
+        # 🔥 собираем логи
+        user_logs = {}
+        for uid in users:
+            logs = get_habit_logs(hid, uid)
+            user_logs[uid] = {l[0]: l[1] for l in logs}
 
         bar = ""
         all_done_today = True
@@ -864,22 +894,38 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         for d in days_list:
             key = today + "_" + d
 
-            if key in log_map:
-                if log_map[key] == "done":
-                    bar += "🟩"
-                elif log_map[key] == "skip":
-                    bar += "🟥"
-                    all_done_today = False
-            else:
-                bar += "⬜"
-                all_done_today = False
+            day_block = ""
 
-        # 🔥 ЕСЛИ ВЧЕРА БЫЛО ПОЛНОСТЬЮ СДЕЛАНО → СКРЫВАЕМ
+            for uid in users:
+                log_map = user_logs.get(uid, {})
+
+                profile = get_user_profile(uid)
+                color = profile[1] if profile and profile[1] else "🟩"
+
+                if key in log_map:
+                    if log_map[key] == "done":
+                        day_block += color
+                    elif log_map[key] == "skip":
+                        day_block += "🟥"
+                        all_done_today = False
+                else:
+                    day_block += "⬜"
+                    all_done_today = False
+
+            # 👉 объединяем день (без пробелов)
+            bar += day_block + " "
+
+        # 🔥 вчера
         yesterday_done = True
+
         for d in days_list:
             key = yesterday + "_" + d
-            if key not in log_map or log_map[key] != "done":
-                yesterday_done = False
+
+            for uid in users:
+                log_map = user_logs.get(uid, {})
+
+                if key not in log_map or log_map[key] != "done":
+                    yesterday_done = False
 
         if yesterday_done:
             continue
@@ -893,18 +939,16 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         if streak > 0:
             title += f" {streak}🔥"
 
-        # 🔥 если всё выполнено сегодня → зачеркиваем
         if "⬜" not in bar:
             title = f"<s>{title}</s>"
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
             f"<code>{' '.join(days_list)}</code>\n"
-            f"<code>{bar}</code>\n"
+            f"<code>{bar.strip()}</code>\n"
             f"────────────\n"
         )
 
-        # показываем только если есть пустые
         if "⬜" in bar:
             kb.append([
                 InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
@@ -1263,22 +1307,15 @@ def reminder_kb():
         [InlineKeyboardButton(text="❌ Без напоминаний", callback_data="rem_skip")]
     ])
     
-import asyncio
 from datetime import datetime, timedelta
 
 from database import cur
-from bot import bot
 
-
-async def reminder_worker():
-    print("🚀 WORKER STARTED")
-
-    sent = set()
+async def reminder_worker(bot: Bot):
+    TIME_FIX = -180  # поправка сервера (в секундах)
 
     while True:
         try:
-            now_utc = datetime.utcnow()
-
             cur.execute("""
                 SELECT rowid, user_id, name, days, time, reminder, tz
                 FROM habits
@@ -1293,15 +1330,17 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # ✅ ИСПРАВЛЕНО (одно смещение)
+                    # текущее время пользователя
                     user_now = datetime.utcnow() + timedelta(hours=tz)
 
+                    # день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
                     if today not in days.split(","):
                         continue
 
+                    # время привычки
                     hour, minute = map(int, time_str.split(":"))
 
                     habit_time = user_now.replace(
@@ -1311,43 +1350,31 @@ async def reminder_worker():
                         microsecond=0
                     )
 
+                    # время напоминания
                     if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
 
-                    diff = (user_now - remind_time).total_seconds()
+                    diff = (user_now - remind_time).total_seconds() + TIME_FIX
 
-                    unique_key = (
-                        user_id,
-                        name,
-                        remind_time.strftime("%Y-%m-%d %H:%M")
-                    )
+                    day_key = remind_time.strftime("%Y-%m-%d_%H:%M")
 
-                    print(f"""
-🧠 HABIT: {name}
-🕒 USER NOW: {user_now}
-🔔 REMIND TIME: {remind_time}
-📊 DIFF: {diff}
-""")
-
-                    # ✅ окно срабатывания
-                    if -5 <= diff <= 30 and unique_key not in sent:
+                    if 0 <= diff <= 30 and not was_reminded_today(rowid, user_id, day_key):
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
                         )
 
-                        print("✅ SENT:", name)
-                        sent.add(unique_key)
+                        mark_reminded(rowid, user_id, day_key)
 
                 except Exception as e:
-                    print("❌ HABIT ERROR:", e)
+                    print("REMINDER ERROR:", e)
 
         except Exception as e:
-            print("❌ WORKER ERROR:", e)
+            print("WORKER ERROR:", e)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(1)  # ✅ ЭТО ПРАВИЛЬНО
 
 
 @dp.callback_query(F.data.startswith("tz_"))
@@ -1457,9 +1484,62 @@ def get_stats_text(user_id):
 # СТАРТ
 # =========================
 async def main():
-    asyncio.create_task(reminder_worker())
+    asyncio.create_task(reminder_worker(bot))
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+   
+# =========================
+# СЕМЬЯ
+# =========================
+   
+    
+@dp.message(F.text == "👥 Семья")
+async def family_menu(m: Message):
+    family_id = get_family_id(m.from_user.id)
+
+    if not family_id:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать семью", callback_data="create_family")],
+            [InlineKeyboardButton(text="🔗 Вступить", callback_data="join_family")]
+        ])
+        await m.answer("Ты не в семье", reply_markup=kb)
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📎 Мой код", callback_data="family_code")],
+            [InlineKeyboardButton(text="🚪 Выйти", callback_data="leave_family")]
+        ])
+        await m.answer("Ты в семье", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "create_family")
+async def create_family_handler(c: CallbackQuery):
+    fid = create_family(c.from_user.id)
+    await c.message.answer(f"Код семьи: {fid}")
+
+
+@dp.callback_query(F.data == "family_code")
+async def show_code(c: CallbackQuery):
+    fid = get_family_id(c.from_user.id)
+    await c.message.answer(f"Код: {fid}")
+
+
+@dp.callback_query(F.data == "join_family")
+async def join_family_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state("join_family")
+    await c.message.answer("Введи код семьи")
+
+
+@dp.message(StateFilter("join_family"))
+async def join_family_input(m: Message, state: FSMContext):
+    join_family(m.from_user.id, m.text.strip())
+    await state.clear()
+    await m.answer("Ты в семье")
+
+
+@dp.callback_query(F.data == "leave_family")
+async def leave_family_handler(c: CallbackQuery):
+    leave_family(c.from_user.id)
+    await c.message.answer("Ты вышел из семьи")    

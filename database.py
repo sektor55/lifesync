@@ -7,6 +7,7 @@ cur = conn.cursor()
 # HABITS UPDATE (ДОБАВЛЕНО)
 # =========================
 def init_habits_update():
+    # ===== HABITS =====
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN type TEXT")
     except:
@@ -36,17 +37,29 @@ def init_habits_update():
         cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
     except:
         pass    
-        
-        
+
+    # ===== USERS =====
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users(
         id INTEGER PRIMARY KEY,
         timezone INTEGER
     )
     """)
-    conn.commit()    
 
-    # 🔥 ВОТ СЮДА ДОБАВЛЯЕМ
+    # 🔥 ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ БЕЗ ЛОМА
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN name TEXT")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN color TEXT")
+    except:
+        pass
+
+    conn.commit()
+
+    # ===== REMINDERS =====
     cur.execute("""
     CREATE TABLE IF NOT EXISTS habit_reminders(
         habit_id INTEGER,
@@ -58,6 +71,19 @@ def init_habits_update():
     conn.commit()
 
 init_habits_update()
+
+# =========================
+# USERS UPDATE (НОВОЕ)
+# =========================
+def init_users_update():
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN shared_finance INTEGER DEFAULT 1")
+    except:
+        pass
+
+    conn.commit()
+
+init_users_update()
 
 
 cur.execute("""CREATE TABLE IF NOT EXISTS transactions(
@@ -100,25 +126,75 @@ def add_transaction(uid, amount, t, cat):
     conn.commit()
 
 
-# ✅ РАСХОДЫ
 def get_expense_stats(uid):
-    cur.execute("""
+    family_id = get_family_id(uid)
+
+    if family_id:
+        cur.execute("SELECT shared_finance FROM users WHERE id=?", (uid,))
+        res = cur.fetchone()
+        shared = res[0] if res else 1
+
+        if shared:
+            users = get_family_members(uid)
+        else:
+            users = [uid]
+    else:
+        users = [uid]
+
+    if not users:
+        return []
+
+    cur.execute(f"""
         SELECT category, SUM(amount)
         FROM transactions
-        WHERE user_id=? AND type='expense'
+        WHERE user_id IN ({",".join("?"*len(users))})
+        AND type='expense'
         GROUP BY category
-    """,(uid,))
+    """, users)
+
     return cur.fetchall()
 
 
-# ✅ ДОХОДЫ
 def get_income_stats(uid):
-    cur.execute("""
+    family_id = get_family_id(uid)
+
+    if family_id:
+        cur.execute("SELECT shared_finance FROM users WHERE id=?", (uid,))
+        res = cur.fetchone()
+        shared = res[0] if res else 1
+
+        if shared:
+            users = get_family_members(uid)
+        else:
+            users = [uid]
+    else:
+        users = [uid]
+
+    if not users:
+        return []
+
+    cur.execute(f"""
         SELECT category, SUM(amount)
         FROM transactions
-        WHERE user_id=? AND type='income'
+        WHERE user_id IN ({",".join("?"*len(users))})
+        AND type='income'
         GROUP BY category
-    """,(uid,))
+    """, users)
+
+    return cur.fetchall()
+
+
+def get_category_breakdown(uid, t):
+    users = get_family_members(uid)
+
+    cur.execute(f"""
+        SELECT category, user_id, SUM(amount)
+        FROM transactions
+        WHERE user_id IN ({",".join("?"*len(users))})
+        AND type=?
+        GROUP BY category, user_id
+    """, (*users, t))
+
     return cur.fetchall()
 
 
@@ -154,19 +230,33 @@ conn.commit()
 
 
 def add_habit(user_id, name, days, h_type, time, task_type, family_id=None, reminder=None, tz=0):
+    if h_type == "family":
+        family_id = get_family_id(user_id)
+
     cur.execute("""
         INSERT INTO habits (user_id, name, days, type, time, task_type, family_id, reminder, tz)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (user_id, name, days, h_type, time, task_type, family_id, reminder, tz))
+
     conn.commit()
 
 
 def get_habits(user_id):
-    cur.execute("""
-        SELECT rowid, name, days, type, time, task_type, reminder
-        FROM habits
-        WHERE user_id=?
-    """, (user_id,))
+    family_id = get_family_id(user_id)
+
+    if family_id:
+        cur.execute("""
+            SELECT rowid, name, days, type, time, task_type, reminder
+            FROM habits
+            WHERE user_id=? OR (family_id=? AND type='family')
+        """, (user_id, family_id))
+    else:
+        cur.execute("""
+            SELECT rowid, name, days, type, time, task_type, reminder
+            FROM habits
+            WHERE user_id=?
+        """, (user_id,))
+
     return cur.fetchall()
 
 
@@ -242,3 +332,74 @@ def get_user_timezone(user_id):
     cur.execute("SELECT timezone FROM users WHERE id=?", (user_id,))
     res = cur.fetchone()
     return res[0] if res else None    
+    
+# =========================
+# 👥 FAMILY
+# =========================
+
+import uuid
+
+
+def create_family(user_id):
+    family_id = str(uuid.uuid4())[:8]
+
+    cur.execute(
+        "INSERT INTO family (user_id, family_id) VALUES (?, ?)",
+        (user_id, family_id)
+    )
+    conn.commit()
+
+    return family_id
+
+
+def join_family(user_id, family_id):
+    cur.execute(
+        "INSERT INTO family (user_id, family_id) VALUES (?, ?)",
+        (user_id, family_id)
+    )
+    conn.commit()
+
+
+def leave_family(user_id):
+    cur.execute(
+        "DELETE FROM family WHERE user_id=?",
+        (user_id,)
+    )
+    conn.commit()
+
+
+def get_family_id(user_id):
+    cur.execute(
+        "SELECT family_id FROM family WHERE user_id=?",
+        (user_id,)
+    )
+    res = cur.fetchone()
+    return res[0] if res else None
+
+
+def get_family_members(user_id):
+    family_id = get_family_id(user_id)
+
+    if not family_id:
+        return [user_id]
+
+    cur.execute(
+        "SELECT user_id FROM family WHERE family_id=?",
+        (family_id,)
+    )
+    return [x[0] for x in cur.fetchall()]    
+    
+def set_user_profile(user_id, name, color):
+    cur.execute("""
+        UPDATE users
+        SET name=?, color=?
+        WHERE id=?
+    """, (name, color, user_id))
+    conn.commit()
+
+
+def get_user_profile(user_id):
+    cur.execute("""
+        SELECT name, color FROM users WHERE id=?
+    """, (user_id,))
+    return cur.fetchone()    
