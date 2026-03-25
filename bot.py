@@ -113,7 +113,6 @@ def stats_menu():
 # =========================
 @dp.message(CommandStart())
 async def start(m: Message):
-    # 🔥 всегда создаём пользователя (без if)
     add_user(m.from_user.id)
 
     tz = get_user_timezone(m.from_user.id)
@@ -1326,18 +1325,15 @@ async def set_timezone(c: CallbackQuery):
 
     tz = int(c.data.split("_")[1])
 
-    # 🔥 гарантируем что пользователь есть
     add_user(c.from_user.id)
-
     save_user_timezone(c.from_user.id, tz)
 
-    # 🔥 удаляем старое сообщение (важно)
+    # удаляем сообщение с кнопками (чтобы не баговало)
     try:
         await c.message.delete()
     except:
         pass
 
-    # 🔥 новое сообщение (гарантия отображения)
     await c.message.answer(
         f"✅ Время установлено (МСК {tz - 3:+d})"
     )
