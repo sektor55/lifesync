@@ -1278,7 +1278,6 @@ async def reminder_worker():
     while True:
         try:
             now_utc = datetime.utcnow()
-            print("⏱ WORKER TICK:", now_utc)
 
             cur.execute("""
                 SELECT rowid, user_id, name, days, time, reminder, tz
@@ -1287,8 +1286,6 @@ async def reminder_worker():
             """)
             habits = cur.fetchall()
 
-            print("📦 HABITS:", habits)
-
             for habit in habits:
                 try:
                     rowid, user_id, name, days, time_str, reminder, tz = habit
@@ -1296,9 +1293,10 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # 👉 время пользователя
+                    # 👉 текущее время пользователя
                     user_now = now_utc + timedelta(hours=tz)
 
+                    # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
@@ -1321,17 +1319,25 @@ async def reminder_worker():
                     else:
                         remind_time = habit_time
 
-                    # 🔥 СРАВНЕНИЕ ПО МИНУТЕ
-                    now_key = user_now.strftime("%Y-%m-%d %H:%M")
-                    remind_key = remind_time.strftime("%Y-%m-%d %H:%M")
+                    # 👉 разница во времени (ключевая логика)
+                    diff = (user_now - remind_time).total_seconds()
 
-                    unique_key = (user_id, name, remind_key)
+                    # 👉 уникальный ключ (чтобы не спамить)
+                    unique_key = (
+                        user_id,
+                        name,
+                        remind_time.strftime("%Y-%m-%d %H:%M")
+                    )
 
-                    print("🕒 USER NOW:", now_key)
-                    print("🔔 REMIND:", remind_key)
+                    print(f"""
+🧠 HABIT: {name}
+🕒 USER NOW: {user_now}
+🔔 REMIND TIME: {remind_time}
+📊 DIFF: {diff}
+""")
 
-                    # ✅ ЧЁТКО В МИНУТУ
-                    if now_key == remind_key and unique_key not in sent:
+                    # ✅ ИДЕАЛЬНОЕ ОКНО СРАБАТЫВАНИЯ
+                    if -5 <= diff <= 30 and unique_key not in sent:
 
                         await bot.send_message(
                             user_id,
