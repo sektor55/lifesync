@@ -1271,9 +1271,9 @@ from bot import bot
 
 
 async def reminder_worker():
-    sent = set()
-
     print("🚀 WORKER STARTED")
+
+    sent = set()
 
     while True:
         try:
@@ -1296,17 +1296,19 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # время пользователя
+                    # 👉 время пользователя
                     user_now = now_utc + timedelta(hours=tz)
 
-                    # день недели
+                    # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
-                    if today not in days.split(","):
+                    habit_days = days.split(",")
+
+                    if today not in habit_days:
                         continue
 
-                    # время привычки
+                    # 👉 время привычки
                     hour, minute = map(int, time_str.split(":"))
                     habit_time = user_now.replace(
                         hour=hour,
@@ -1315,38 +1317,32 @@ async def reminder_worker():
                         microsecond=0
                     )
 
-                    # время напоминания
+                    # 👉 время напоминания
                     if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
 
+                    diff = (user_now - remind_time).total_seconds()
+
                     print("🕒 USER NOW:", user_now)
                     print("🔔 REMIND TIME:", remind_time)
-
-                    diff = (user_now - remind_time).total_seconds()
                     print("📊 DIFF:", diff)
 
-                    # ❗ ЖЁСТКАЯ ЗАЩИТА ОТ РАННИХ/СТАРЫХ СРАБАТЫВАНИЙ
-                    if diff < 0:
-                        continue  # ещё рано
-
-                    if diff > 60:
-                        continue  # уже слишком поздно (старый мусор)
-
-                    # анти-дубль
                     key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
-                    if key in sent:
-                        continue
 
-                    print("✅ SENDING REMINDER:", name)
+                    # ❗ ГЛАВНАЯ ЛОГИКА
+                    # если время уже наступило И ещё не отправляли
+                    if diff >= 0 and key not in sent:
 
-                    await bot.send_message(
-                        user_id,
-                        f"⏰ Напоминание: {name}"
-                    )
+                        await bot.send_message(
+                            user_id,
+                            f"⏰ Напоминание: {name}"
+                        )
 
-                    sent.add(key)
+                        print("✅ SENT:", name)
+
+                        sent.add(key)
 
                 except Exception as e:
                     print("❌ HABIT ERROR:", e)
