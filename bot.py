@@ -1299,17 +1299,15 @@ async def reminder_worker():
                     # 👉 время пользователя
                     user_now = now_utc + timedelta(hours=tz)
 
-                    # 👉 день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
-                    habit_days = days.split(",")
-
-                    if today not in habit_days:
+                    if today not in days.split(","):
                         continue
 
                     # 👉 время привычки
                     hour, minute = map(int, time_str.split(":"))
+
                     habit_time = user_now.replace(
                         hour=hour,
                         minute=minute,
@@ -1323,17 +1321,17 @@ async def reminder_worker():
                     else:
                         remind_time = habit_time
 
-                    diff = (user_now - remind_time).total_seconds()
+                    # 🔥 СРАВНЕНИЕ ПО МИНУТЕ
+                    now_key = user_now.strftime("%Y-%m-%d %H:%M")
+                    remind_key = remind_time.strftime("%Y-%m-%d %H:%M")
 
-                    print("🕒 USER NOW:", user_now)
-                    print("🔔 REMIND TIME:", remind_time)
-                    print("📊 DIFF:", diff)
+                    unique_key = (user_id, name, remind_key)
 
-                    key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
+                    print("🕒 USER NOW:", now_key)
+                    print("🔔 REMIND:", remind_key)
 
-                    # ❗ ГЛАВНАЯ ЛОГИКА
-                    # если время уже наступило И ещё не отправляли
-                    if diff >= 0 and key not in sent:
+                    # ✅ ЧЁТКО В МИНУТУ
+                    if now_key == remind_key and unique_key not in sent:
 
                         await bot.send_message(
                             user_id,
@@ -1342,7 +1340,7 @@ async def reminder_worker():
 
                         print("✅ SENT:", name)
 
-                        sent.add(key)
+                        sent.add(unique_key)
 
                 except Exception as e:
                     print("❌ HABIT ERROR:", e)
