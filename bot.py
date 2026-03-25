@@ -1329,7 +1329,7 @@ async def reminder_worker():
                         continue
 
                     # окно (FIX)
-                    if abs((user_now - remind_time).total_seconds()) <= 60:
+                    if 0 <= (user_now - remind_time).total_seconds() <= 10:
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
