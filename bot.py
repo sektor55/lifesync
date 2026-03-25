@@ -1271,6 +1271,8 @@ from bot import bot
 
 
 async def reminder_worker():
+    sent = set()
+
     while True:
         try:
             now_utc = datetime.utcnow()
@@ -1291,17 +1293,20 @@ async def reminder_worker():
                     if not time_str:
                         continue
 
-                    # текущее время пользователя
+                    # время пользователя
                     user_now = now_utc + timedelta(hours=tz)
 
-                    weekday = str(user_now.weekday())
+                    # день недели (FIX)
+                    weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+                    today = weekday_map[user_now.weekday()]
+
                     habit_days = days.split(",")
 
-                    if weekday not in habit_days:
+                    if today not in habit_days:
                         continue
 
+                    # время привычки
                     hour, minute = map(int, time_str.split(":"))
-
                     habit_time = user_now.replace(
                         hour=hour,
                         minute=minute,
@@ -1309,17 +1314,27 @@ async def reminder_worker():
                         microsecond=0
                     )
 
+                    # напоминание
                     if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
+                        
+                    print("NOW:", user_now)
+                    print("REMIND:", remind_time)    
 
-                    # 🔥 увеличили окно
-                    if remind_time <= user_now <= remind_time + timedelta(seconds=120):
+                    # анти-дубль
+                    key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
+                    if key in sent:
+                        continue
+
+                    # окно (FIX)
+                    if abs((user_now - remind_time).total_seconds()) <= 60:
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
                         )
+                        sent.add(key)
 
                 except Exception as e:
                     print("HABIT ERROR:", e)
