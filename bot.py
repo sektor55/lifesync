@@ -1284,8 +1284,6 @@ async def reminder_worker():
             """)
             habits = cur.fetchall()
 
-            print("HABITS:", habits)
-
             for habit in habits:
                 try:
                     rowid, user_id, name, days, time_str, reminder, tz = habit
@@ -1296,13 +1294,11 @@ async def reminder_worker():
                     # время пользователя
                     user_now = now_utc + timedelta(hours=tz)
 
-                    # день недели (FIX)
+                    # день недели
                     weekday_map = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     today = weekday_map[user_now.weekday()]
 
-                    habit_days = days.split(",")
-
-                    if today not in habit_days:
+                    if today not in days.split(","):
                         continue
 
                     # время привычки
@@ -1314,22 +1310,19 @@ async def reminder_worker():
                         microsecond=0
                     )
 
-                    # напоминание
+                    # время напоминания
                     if reminder is not None:
                         remind_time = habit_time - timedelta(minutes=reminder)
                     else:
                         remind_time = habit_time
-                        
-                    print("NOW:", user_now)
-                    print("REMIND:", remind_time)    
 
                     # анти-дубль
                     key = (user_id, name, remind_time.strftime("%Y-%m-%d %H:%M"))
                     if key in sent:
                         continue
 
-                    # окно (FIX)
-                    if 0 <= (user_now - remind_time).total_seconds() <= 10:
+                    # ✅ ЧЁТКО В МОМЕНТ
+                    if 0 <= (user_now - remind_time).total_seconds() <= 2:
                         await bot.send_message(
                             user_id,
                             f"⏰ Напоминание: {name}"
@@ -1342,7 +1335,8 @@ async def reminder_worker():
         except Exception as e:
             print("WORKER ERROR:", e)
 
-        await asyncio.sleep(10)
+        # ✅ проверяем каждую секунду
+        await asyncio.sleep(1)
 
 
 @dp.callback_query(F.data.startswith("tz_"))
