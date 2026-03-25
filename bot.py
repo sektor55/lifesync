@@ -643,12 +643,15 @@ async def select_minute(c: CallbackQuery, state: FSMContext):
 
     await state.update_data(time=time)
 
+    # 🔥 ВАЖНО — меняем состояние
+    await state.set_state(AddHabit.reminder)
+
     await c.message.edit_text(
         "Включить напоминание?",
         reply_markup=reminder_kb()
     )
 
-@dp.callback_query(F.data.startswith("rem_"))
+@dp.callback_query(AddHabit.reminder, F.data.startswith("rem_"))
 async def set_reminder(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
@@ -669,6 +672,9 @@ async def set_time(m: Message, state: FSMContext):
         return
 
     await state.update_data(time=m.text)
+
+    # 🔥 ВАЖНО
+    await state.set_state(AddHabit.reminder)
 
     await m.answer(
         "Включить напоминание?",

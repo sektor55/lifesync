@@ -8,9 +8,10 @@ class AddTransaction(StatesGroup):
 class AddHabit(StatesGroup):
     name = State()
     type = State()
+    task_type = State()
     days = State()
     time = State()
-    task_type = State()  # ✅ ДОБАВЛЕНО
+    reminder = State()  # ← ВОТ ЭТА СТРОКА
 
 class Family(StatesGroup):
     create_password = State()
