@@ -58,24 +58,24 @@ def timezone_kb():
 
     for i in range(-12, 13):
         if i == 3:
-            continue  # пропускаем МСК (сделаем отдельно)
+            continue  # МСК отдельно
 
         diff = i - 3
         sign = "+" if diff >= 0 else ""
 
-        text = f"{msk_sign}{diff} к МСК" if diff != 0 else "0"
+        text = f"{sign}{diff} к МСК"
 
         buttons.append(
             InlineKeyboardButton(
-                text=f"{sign}{diff} к МСК",
+                text=text,
                 callback_data=f"tz_{i}"
             )
         )
 
-    # 🔥 по 5 кнопок в ряд
+    # по 5 кнопок в ряд
     rows = [buttons[i:i+5] for i in range(0, len(buttons), 5)]
 
-    # 🔥 отдельная большая кнопка МСК
+    # кнопка МСК
     rows.append([
         InlineKeyboardButton(
             text="🕒 Время по МСК",
