@@ -11,9 +11,10 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 
+from db import get_family_id
 from config import TOKEN
 from database import *
-from keyboards import get_main_menu as main_menu 
+import keyboards
 from states import *
 USER_MODE = {}
 
@@ -109,13 +110,25 @@ def confirm_kb(prefix="exp"):
 
 def timezone_kb():
     kb = []
+    row = []
 
-    for i in range(-3, 6):
-        text = f"МСК {i:+d}"
-        kb.append([InlineKeyboardButton(
+    for i in range(-12, 13):
+        if i == 0:
+            text = "🕒 МСК"
+        else:
+            text = f"МСК {i:+d}"
+
+        row.append(InlineKeyboardButton(
             text=text,
             callback_data=f"tz_{i+3}"
-        )])
+        ))
+
+        if len(row) == 4:  # компактная сетка
+            kb.append(row)
+            row = []
+
+    if row:
+        kb.append(row)
 
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -141,12 +154,12 @@ def stats_menu():
 # =========================
 @dp.callback_query(F.data == "budget")
 async def budget(c: CallbackQuery):
-    await c.message.edit_text("📊 Финансы", reply_markup=budget_menu())
+    await c.message.edit_text("📊 Финансы", reply_markup=keyboards.budget_menu())
 
 
 @dp.callback_query(F.data == "back_main")
 async def back_main(c: CallbackQuery):
-    await c.message.edit_text("Главное меню", reply_markup=main_menu())
+    await c.message.edit_text("Главное меню", reply_markup=keyboards.get_main_menu())
 
 
 # =========================
@@ -188,7 +201,7 @@ async def exp_confirm(c: CallbackQuery, state: FSMContext):
 
     await c.message.answer(
         f"✅ {data['amount']} ₽ → {data['category']}",
-        reply_markup=budget_menu()
+        reply_markup=keyboards.budget_menu()
     )
 
 
@@ -306,7 +319,7 @@ async def inc_confirm(c: CallbackQuery, state: FSMContext):
 
     await c.message.answer(
         f"✅ {data['amount']} ₽ → {data['category']}",
-        reply_markup=budget_menu()
+        reply_markup=keyboards.budget_menu()
     )
 
 
@@ -406,7 +419,7 @@ async def graph_expense(c: CallbackQuery):
     data = get_expense_stats(c.from_user.id)
 
     if not data:
-        await c.message.answer("Нет данных", reply_markup=budget_menu())
+        await c.message.answer("Нет данных", reply_markup=keyboards.budget_menu())
         return
 
     cats = [x[0] for x in data]
@@ -443,7 +456,7 @@ async def graph_expense(c: CallbackQuery):
 
     photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
-    await c.message.answer("📊 Готово", reply_markup=budget_menu())
+    await c.message.answer("📊 Готово", reply_markup=keyboards.budget_menu())
 
 
 # =========================
@@ -454,7 +467,7 @@ async def graph_income(c: CallbackQuery):
     data = get_income_stats(c.from_user.id)
 
     if not data:
-        await c.message.answer("Нет данных", reply_markup=budget_menu())
+        await c.message.answer("Нет данных", reply_markup=keyboards.budget_menu())
         return
 
     cats = [x[0] for x in data]
@@ -491,7 +504,7 @@ async def graph_income(c: CallbackQuery):
 
     photo = FSInputFile(file_name)
     await c.message.answer_photo(photo)
-    await c.message.answer("📊 Готово", reply_markup=budget_menu())
+    await c.message.answer("📊 Готово", reply_markup=keyboards.budget_menu())
     
     # =========================
 # 🏋️ ПРИВЫЧКИ
@@ -1424,7 +1437,7 @@ async def set_timezone(c: CallbackQuery):
 
     await c.message.answer(
         "🏠 Главное меню",
-        reply_markup=main_menu()
+        reply_markup=keyboards.get_main_menu()
     )
 
 @dp.message(F.text == "⚙️ Настройки")
@@ -1475,7 +1488,7 @@ async def sub_menu(m: Message):
 async def open_finance(m: Message):
     await m.answer(
         "💰 Финансы",
-        reply_markup=budget_menu()
+        reply_markup=keyboards.budget_menu()
     )
 
 @dp.message(F.text == "🏋️ Привычки")
@@ -1595,7 +1608,7 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
             await state.clear()
 
             await c.message.answer("✅ Готово! Ты настроен.")
-            await c.message.answer("🏠 Главное меню", reply_markup=main_menu())
+            await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
 
         else:
             # если это настройки
