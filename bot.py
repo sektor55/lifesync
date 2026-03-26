@@ -158,7 +158,7 @@ async def budget(c: CallbackQuery):
 
 @dp.callback_query(F.data == "back_main")
 async def back_main(c: CallbackQuery):
-    await c.message.edit_text("Главное меню", reply_markup=keyboards.get_main_menu())
+    await c.message.answer("Главное меню", reply_markup=keyboards.get_main_menu())
 
 
 # =========================
@@ -207,7 +207,7 @@ async def exp_confirm(c: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "exp_change")
 async def exp_change(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddTransaction.waiting_category)
-    await c.message.answer("Выбери категорию", reply_markup=categories_menu())
+    await c.message.answer("Выбери категорию", reply_markup=keyboards.categories_menu())
 
 
 @dp.callback_query(AddTransaction.waiting_category, F.data.startswith("cat_"))
@@ -363,6 +363,9 @@ async def stats(c: CallbackQuery):
 
     users = get_family_members(c.from_user.id)
 
+    if not users:
+        users = [c.from_user.id]
+
     profiles = {}
     for u in users:
         p = get_user_profile(u)
@@ -516,7 +519,7 @@ DAYS = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
 
 @dp.callback_query(F.data == "habits")
 async def habits_menu_handler(c: CallbackQuery):
-    await c.message.edit_text("🏋️ Привычки", reply_markup=habits_menu())
+    await c.message.edit_text("🏋️ Привычки", reply_markup=keyboards.habits_menu())
 
 
 @dp.callback_query(F.data == "habit_add")
@@ -782,7 +785,7 @@ async def finish_habit_creation(c: CallbackQuery, state: FSMContext):
     # ✅ сообщение + возврат в меню привычек
     await c.message.answer(
         "✅ Привычка создана",
-        reply_markup=habits_menu()
+        reply_markup=keyboards.habits_menu()
     )
 
     await c.answer()
@@ -811,7 +814,7 @@ async def render_habits(user_id):
     habits = get_habits(user_id)
 
     if not habits:
-        return "Нет привычек", habits_menu()
+        return "Нет привычек", keyboards.habits_menu()
 
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
@@ -836,8 +839,7 @@ async def render_habits(user_id):
 
             if key in log_map:
                 if log_map[key] == "done":
-                    color = get_user_color(user_id)
-                    bar += color
+                    bar += get_user_color(user_id)
                 elif log_map[key] == "skip":
                     bar += "🟥"
             else:
@@ -845,7 +847,6 @@ async def render_habits(user_id):
 
         labels = " ".join(days_list)
 
-        # 👉 время
         title = name
         if time:
             title = f"{name} ({time})"
@@ -857,7 +858,6 @@ async def render_habits(user_id):
             f"────────────\n"
         )
 
-        # 👉 скрываем если полностью выполнена
         if "⬜" in bar:
             kb.append([
                 InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
@@ -866,15 +866,6 @@ async def render_habits(user_id):
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
     return text, InlineKeyboardMarkup(inline_keyboard=kb)
-
-@dp.callback_query(F.data == "habit_list")
-async def habit_list(c: CallbackQuery):
-    mode = USER_MODE.get(c.from_user.id, "personal")
-
-    try:
-        await show_my_habits(c, mode=mode)
-    except:
-        await c.message.answer("Ошибка открытия привычек")
 
 
 async def show_my_habits(c: CallbackQuery, mode="personal"):
@@ -919,7 +910,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(user_id)
+                        color = get_user_color(uid)
                         block += color if color else "🟩"
                     elif log_map[key] == "skip":
                         block += "🟥"
@@ -1220,7 +1211,7 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(user_id)
+                        color = get_user_color(uid)
                         block += color if color else "🟩"
                     elif log_map[key] == "skip":
                         block += "🟥"
@@ -1494,7 +1485,7 @@ async def open_finance(m: Message):
 async def open_habits(m: Message):
     await m.answer(
         "🏋️ Привычки",
-        reply_markup=habits_menu()
+        reply_markup=keyboards.habits_menu()
     )    
     
 @dp.message(F.text == "📊 Аналитика")
@@ -1592,31 +1583,24 @@ async def set_timezone(m: Message, state: FSMContext):
 async def set_color_callback(c: CallbackQuery, state: FSMContext):
     color = c.data.split("_")[1]
 
-    try:
-        data = await state.get_data()
+    data = await state.get_data()
 
-        # если это старт
-        if "name" in data:
-            save_user_profile(
-                user_id=c.from_user.id,
-                name=data["name"],
-                timezone=data["timezone"],
-                color=color
-            )
+    if "name" in data:
+        cur.execute("""
+            UPDATE users
+            SET name=?, timezone=?, color=?
+            WHERE id=?
+        """, (data["name"], data["timezone"], color, c.from_user.id))
+        conn.commit()
 
-            await state.clear()
+        await state.clear()
 
-            await c.message.answer("✅ Готово! Ты настроен.")
-            await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
+        await c.message.answer("✅ Готово!")
+        await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
 
-        else:
-            # если это настройки
-            set_user_profile(c.from_user.id, "User", color)
-            await c.answer("✅ Цвет сохранён")
-
-    except:
+    else:
         set_user_profile(c.from_user.id, "User", color)
-        await c.answer("✅ Цвет сохранён")   
+        await c.answer("✅ Цвет сохранён")  
     
     
 # =========================
@@ -1747,6 +1731,8 @@ async def leave_family_handler(c: CallbackQuery):
 
 @dp.message(CommandStart())
 async def start(m: Message, state: FSMContext):
+    add_user(m.from_user.id)  # 🔥 ВАЖНО
+
     await state.set_state(StartStates.name)
     await m.answer(
         "👋 Добро пожаловать!\n\n"

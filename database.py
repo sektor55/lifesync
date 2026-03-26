@@ -438,11 +438,31 @@ def set_user_profile(user_id, name, color):
 
 def get_user_profile(user_id):
     cur.execute("""
-        SELECT name, color FROM users WHERE id=?
+        SELECT name, timezone, color FROM users WHERE id=?
     """, (user_id,))
     return cur.fetchone()    
     
+import sqlite3
+
+def ensure_family_column():
+    conn = sqlite3.connect("data.db")
+    cur = conn.cursor()
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN family_id INTEGER")
+        conn.commit()
+    except:
+        pass
+
+    conn.close()
+
+
 def get_family_id(user_id):
-    cur.execute("SELECT family_id FROM users WHERE id = ?", (user_id,))
-    row = cur.fetchone()
-    return row[0] if row else None
+    cur.execute("""
+        SELECT family_id FROM family_members WHERE user_id=?
+    """, (user_id,))
+    
+    res = cur.fetchone()
+    return res[0] if res else None
+   
+ensure_family_column()   
