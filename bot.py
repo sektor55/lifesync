@@ -20,6 +20,12 @@ USER_MODE = {}
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+def get_user_color(user_id):
+    profile = get_user_profile(user_id)
+    if profile:
+        return profile[2] or "🟩"
+    return "🟩"
+
 # =========================
 # РАСХОД (НЕ ТРОГАЕМ)
 # =========================
@@ -100,6 +106,20 @@ def confirm_kb(prefix="exp"):
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"{prefix}_confirm")],
         [InlineKeyboardButton(text="🔄 Изменить категорию", callback_data=f"{prefix}_change")]
     ])
+
+def timezone_kb():
+    kb = []
+
+    for i in range(-3, 6):
+        text = f"МСК {i:+d}"
+        kb.append([InlineKeyboardButton(
+            text=text,
+            callback_data=f"tz_{i+3}"
+        )])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
 
 # ✅ ДОБАВЛЕНО (новое меню статистики)
 def stats_menu():
@@ -804,7 +824,8 @@ async def render_habits(user_id):
 
             if key in log_map:
                 if log_map[key] == "done":
-                    bar += "🟩"
+                    color = get_user_color(uid)
+                    bar += color
                 elif log_map[key] == "skip":
                     bar += "🟥"
             else:
@@ -867,46 +888,50 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         days_list = days.split(",")
 
-        # 🔥 собираем логи
+        # 🔥 собираем логи всех пользователей
         user_logs = {}
         for uid in users:
             logs = get_habit_logs(hid, uid)
             user_logs[uid] = {l[0]: l[1] for l in logs}
 
-        bar = ""
-        all_done_today = True
+        # 🔥 строим красивый бар
+        day_blocks = []
+        day_labels = []
 
         for d in days_list:
             key = today + "_" + d
 
-            done_count = 0
-            total_users = len(users)
-
+            block = ""
             for uid in users:
                 log_map = user_logs.get(uid, {})
 
-                if key in log_map and log_map[key] == "done":
-                    done_count += 1
-
-            if total_users == 1:
-                bar += "🟩 " if done_count == 1 else "⬜ "
-            else:
-                if done_count == 0:
-                    bar += "⬜ "
-                elif done_count == total_users:
-                    bar += "🟩 "
+                if key in log_map:
+                    if log_map[key] == "done":
+                        color = get_user_color(uid)
+                        block += color if color else "🟩"
+                    elif log_map[key] == "skip":
+                        block += "🟥"
                 else:
-                    bar += "🟨 "
+                    block += "⬜"
+
+            # 👉 центрируем день над блоком
+            width = len(block)
+            label = d.center(width)
+
+            day_labels.append(label)
+            day_blocks.append(block)
+
+        # соединяем
+        labels_line = " ".join(day_labels)
+        bar_line = " ".join(day_blocks)
 
         # 🔥 вчера
         yesterday_done = True
 
         for d in days_list:
             key = yesterday + "_" + d
-
             for uid in users:
                 log_map = user_logs.get(uid, {})
-
                 if key not in log_map or log_map[key] != "done":
                     yesterday_done = False
 
@@ -918,21 +943,20 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             title = f"{name} ({time})"
 
         streak = get_streak(hid, c.from_user.id)
-
         if streak > 0:
             title += f" {streak}🔥"
 
-        if "⬜" not in bar:
+        if "⬜" not in bar_line:
             title = f"<s>{title}</s>"
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{' '.join(days_list)}</code>\n"
-            f"<code>{bar.strip()}</code>\n"
+            f"<code>{labels_line}</code>\n"
+            f"<code>{bar_line}</code>\n"
             f"────────────\n"
         )
 
-        if "⬜" in bar:
+        if "⬜" in bar_line:
             kb.append([
                 InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
             ])
@@ -1129,6 +1153,7 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
     USER_MODE[c.from_user.id] = mode
 
     habits = get_habits(c.from_user.id)
+    users = get_family_members(c.from_user.id)
 
     from datetime import datetime, timedelta
     now = datetime.now()
@@ -1154,29 +1179,50 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
             continue
 
         days_list = days.split(",")
-        logs = get_habit_logs(hid, c.from_user.id)
 
-        log_map = {}
+        # 🔥 собираем логи всех пользователей
+        user_logs = {}
+        for uid in users:
+            logs = get_habit_logs(hid, uid)
 
-        for l in logs:
-            date_str = l[0].split("_")[0]
-            date = datetime.strptime(date_str, "%Y-%m-%d")
+            log_map = {}
+            for l in logs:
+                date_str = l[0].split("_")[0]
+                date = datetime.strptime(date_str, "%Y-%m-%d")
 
-            if date >= start_date:
-                log_map[l[0]] = l[1]
+                if date >= start_date:
+                    log_map[l[0]] = l[1]
 
-        bar = ""
+            user_logs[uid] = log_map
+
+        # 🔥 строим бар
+        day_blocks = []
+        day_labels = []
 
         for d in days_list:
             key = today + "_" + d
 
-            if key in log_map:
-                if log_map[key] == "done":
-                    bar += "🟩"
-                elif log_map[key] == "skip":
-                    bar += "🟥"
-            else:
-                bar += "⬜"
+            block = ""
+            for uid in users:
+                log_map = user_logs.get(uid, {})
+
+                if key in log_map:
+                    if log_map[key] == "done":
+                        color = get_user_color(uid)
+                        block += color if color else "🟩"
+                    elif log_map[key] == "skip":
+                        block += "🟥"
+                else:
+                    block += "⬜"
+
+            width = len(block)
+            label = d.center(width)
+
+            day_labels.append(label)
+            day_blocks.append(block)
+
+        labels_line = " ".join(day_labels)
+        bar_line = " ".join(day_blocks)
 
         title = name
         if time:
@@ -1184,18 +1230,16 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{' '.join(days_list)}</code>\n"
-            f"<code>{bar}</code>\n"
+            f"<code>{labels_line}</code>\n"
+            f"<code>{bar_line}</code>\n"
             f"────────────\n"
         )
 
-    # 🔁 переключатели режимов
     if mode == "personal":
         kb.append([InlineKeyboardButton(text="👥 Общие", callback_data="progress_family")])
     else:
         kb.append([InlineKeyboardButton(text="👤 Личные", callback_data="progress_personal")])
 
-    # 📅 периоды
     kb.append([
         InlineKeyboardButton(text="📅 Неделя", callback_data="prog_week"),
         InlineKeyboardButton(text="🗓 Месяц", callback_data="prog_month"),
@@ -1399,8 +1443,16 @@ async def settings_menu(m: Message):
 
 @dp.callback_query(F.data == "set_color")
 async def change_color(c: CallbackQuery, state: FSMContext):
-    await state.set_state(StartStates.color)
-    await c.message.answer("Отправь новый цвет (например 🟦)")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
+            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
+        ]
+    ])
+
+    await c.message.answer("🎨 Выбери цвет:", reply_markup=kb)
 
 @dp.callback_query(F.data == "settings_tz")
 async def settings_timezone(c: CallbackQuery):
@@ -1497,38 +1549,63 @@ async def set_name(m: Message, state: FSMContext):
     await state.update_data(name=m.text)
     await state.set_state(StartStates.timezone)
 
-    await m.answer("Выбери часовой пояс (например: Europe/Moscow)")
+    await m.answer(
+        "Выбери время относительно МСК:",
+        reply_markup=timezone_kb()
+    )
 
 
 @dp.message(StartStates.timezone)
 async def set_timezone(m: Message, state: FSMContext):
-    await state.update_data(timezone=m.text)
+    tz = int(m.text) if m.text.isdigit() else 3  # fallback
+
+    await state.update_data(timezone=tz)
     await state.set_state(StartStates.color)
 
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
+            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
+        ]
+    ])
+
     await m.answer(
-        "🎨 Выбери цвет своих привычек:\n\n"
-        "Он будет отображаться в прогрессе и отличать тебя от других участников.\n\n"
-        "Примеры:\n"
-        "🟩 🟦 🟪 🟧 🟥\n\n"
-        "Отправь один из них"
-    )
+        "🎨 Выбери цвет привычек:",
+        reply_markup=kb
+    )   
+    
+@dp.callback_query(F.data.startswith("color_"))
+async def set_color_callback(c: CallbackQuery, state: FSMContext):
+    color = c.data.split("_")[1]
 
+    try:
+        data = await state.get_data()
 
-@dp.message(StartStates.color)
-async def set_color(m: Message, state: FSMContext):
-    data = await state.get_data()
+        # если это старт
+        if "name" in data:
+            save_user_profile(
+                user_id=c.from_user.id,
+                name=data["name"],
+                timezone=data["timezone"],
+                color=color
+            )
 
-    save_user_profile(
-        user_id=m.from_user.id,
-        name=data["name"],
-        timezone=data["timezone"],
-        color=m.text.strip()
-    )
+            await state.clear()
 
-    await state.clear()
+            await c.message.answer("✅ Готово! Ты настроен.")
+            await c.message.answer("🏠 Главное меню", reply_markup=main_menu())
 
-    await m.answer("✅ Готово! Ты настроен.")
-    await m.answer("🏠 Главное меню", reply_markup=main_menu())    
+        else:
+            # если это настройки
+            set_user_profile(c.from_user.id, "User", color)
+            await c.answer("✅ Цвет сохранён")
+
+    except:
+        set_user_profile(c.from_user.id, "User", color)
+        await c.answer("✅ Цвет сохранён")   
+    
     
 # =========================
 # СЕМЬЯ
@@ -1656,12 +1733,6 @@ async def set_color(c: CallbackQuery):
     ])
     await c.message.answer("Выбери цвет", reply_markup=kb)
 
-
-@dp.callback_query(F.data.startswith("color_"))
-async def save_color(c: CallbackQuery):
-    color = c.data.split("_")[1]
-    set_user_profile(c.from_user.id, "User", color)
-    await c.answer("Сохранено")    
 
 
 # =========================
