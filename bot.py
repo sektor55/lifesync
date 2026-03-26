@@ -1397,21 +1397,20 @@ async def set_timezone(c: CallbackQuery):
     add_user(c.from_user.id)
     save_user_timezone(c.from_user.id, tz)
 
-    # 🔥 удаляем сообщение с кнопками
     try:
         await c.message.edit_text(
-    f"✅ Время установлено (МСК {tz - 3:+d})",
-    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
-    ])
-)
-
-await c.message.edit_text(
-    f"✅ Время установлено (МСК {tz - 3:+d})",
-    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
-    ])
-)
+            f"✅ Время установлено (МСК {tz - 3:+d})",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
+            ])
+        )
+    except:
+        await c.message.answer(
+            f"✅ Время установлено (МСК {tz - 3:+d})",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
+            ])
+        )
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
