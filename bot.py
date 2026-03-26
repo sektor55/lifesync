@@ -13,7 +13,7 @@ from aiogram.fsm.context import FSMContext
 
 from config import TOKEN
 from database import *
-from keyboards import *
+from keyboards import get_main_menu as main_menu *
 from states import *
 USER_MODE = {}
 
@@ -113,31 +113,7 @@ def stats_menu():
 # =========================
 # СТАРТ
 # =========================
-@dp.message(CommandStart())
-async def start(m: Message):
-    # 🔍 дебаг БД
-    cur.execute("SELECT time, reminder, tz FROM habits")
-    print("HABITS:", cur.fetchall())
 
-    add_user(m.from_user.id)
-
-    tz = get_user_timezone(m.from_user.id)
-
-    if tz is None:
-        await m.answer(
-            "👋 Добро пожаловать в LifeSync!\n\n"
-            "💰 Финансы\n"
-            "🏋️ Привычки\n"
-            "📊 Аналитика\n\n"
-            "Выбери время относительно МСК:",
-            reply_markup=timezone_kb()
-        )
-        return
-
-    await m.answer(
-        "🏠 Главное меню",
-        reply_markup=main_menu()
-    )
 
 
 # =========================
@@ -1412,8 +1388,12 @@ async def settings_menu(m: Message):
     await m.answer(
         "⚙️ Настройки",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="settings_tz")]
-            [InlineKeyboardButton(text="🎨 Цвет", callback_data="set_color")]
+            [
+                InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="settings_tz"),
+            ],
+            [
+                InlineKeyboardButton(text="🎨 Цвет", callback_data="set_color"),
+            ]
         ])
     )
 
@@ -1511,17 +1491,6 @@ class StartStates(StatesGroup):
     color = State()
 
 
-@dp.message(CommandStart())
-async def start(m: Message, state: FSMContext):
-    await state.set_state(StartStates.name)
-    await m.answer(
-        "👋 Добро пожаловать!\n\n"
-        "Этот бот поможет тебе:\n"
-        "— контролировать финансы\n"
-        "— внедрять привычки\n"
-        "— работать вместе с семьёй\n\n"
-        "Как тебя назвать?"
-    )
 
 @dp.message(StartStates.name)
 async def set_name(m: Message, state: FSMContext):
@@ -1558,7 +1527,8 @@ async def set_color(m: Message, state: FSMContext):
 
     await state.clear()
 
-    await m.answer("✅ Готово! Ты настроен.")    
+    await m.answer("✅ Готово! Ты настроен.")
+    await m.answer("🏠 Главное меню", reply_markup=main_menu())    
     
 # =========================
 # СЕМЬЯ
@@ -1697,6 +1667,19 @@ async def save_color(c: CallbackQuery):
 # =========================
 # СТАРТ
 # =========================
+
+@dp.message(CommandStart())
+async def start(m: Message, state: FSMContext):
+    await state.set_state(StartStates.name)
+    await m.answer(
+        "👋 Добро пожаловать!\n\n"
+        "Этот бот поможет тебе:\n"
+        "— контролировать финансы\n"
+        "— внедрять привычки\n"
+        "— работать вместе с семьёй\n\n"
+        "Как тебя назвать?"
+    )
+
 
 async def main():
     asyncio.create_task(reminder_worker(bot))
