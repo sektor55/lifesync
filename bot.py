@@ -154,13 +154,7 @@ async def budget(c: CallbackQuery):
 @dp.callback_query(F.data == "back_main")
 async def back_main(c: CallbackQuery):
     await c.message.answer("Главное меню", reply_markup=keyboards.get_main_menu())
-    
-@dp.callback_query(F.data == "budget")
-async def back_to_budget(c: CallbackQuery):
-    await c.message.edit_text(
-        "💰 Финансы",
-        reply_markup=keyboards.budget_menu()
-    )    
+        
 
 
 # =========================
@@ -348,9 +342,6 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
         f"Сумма: {data['amount']} ₽\nКатегория: {cat}",
         reply_markup=confirm_kb("inc")
     )
-
-
-
 
 # =========================
 # 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
@@ -1408,17 +1399,19 @@ async def set_timezone(c: CallbackQuery):
 
     # 🔥 удаляем сообщение с кнопками
     try:
-        await c.message.delete()
-    except:
-        pass
+        await c.message.edit_text(
+    f"✅ Время установлено (МСК {tz - 3:+d})",
+    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
+    ])
+)
 
-    # 🔥 отправляем ДВА сообщения (гарантия)
-    await c.message.answer(f"✅ Время установлено (МСК {tz - 3:+d})")
-
-    await c.message.answer(
-        "🏠 Главное меню",
-        reply_markup=keyboards.get_main_menu()
-    )
+await c.message.edit_text(
+    f"✅ Время установлено (МСК {tz - 3:+d})",
+    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
+    ])
+)
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
@@ -1648,9 +1641,9 @@ async def create_family_password(m: Message, state: FSMContext):
     data = await state.get_data()
 
     fid = create_family(
-        owner_id=m.from_user.id,
-        name=data["name"],
-        password=m.text.strip()
+        m.from_user.id,
+        data["name"],
+        m.text.strip()
     )
 
     await state.clear()
@@ -1681,9 +1674,9 @@ async def join_family_password(m: Message, state: FSMContext):
     data = await state.get_data()
 
     success, name = join_family(
-        user_id=m.from_user.id,
-        code=data["code"],
-        password=m.text.strip()
+        m.from_user.id,
+        data["code"],
+        m.text.strip()
     )
 
     await state.clear()
@@ -1718,7 +1711,7 @@ async def leave_family_handler(c: CallbackQuery):
 
 @dp.message(CommandStart())
 async def start(m: Message, state: FSMContext):
-    add_user(m.from_user.id)  # 🔥 ВАЖНО
+    add_user(m.from_user.id, m.from_user.first_name)  # 🔥 ВАЖНО
 
     await state.set_state(StartStates.name)
     await m.answer(

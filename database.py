@@ -328,9 +328,11 @@ def mark_reminded(habit_id, user_id, day_key):
     """, (habit_id, user_id, day_key))
     conn.commit()
     
-def add_user(user_id):
-    cur.execute("INSERT OR IGNORE INTO users (id, timezone) VALUES (?, ?)", (user_id, None))
-    conn.commit()
+def add_user(user_id, name="User"):
+    cur.execute("""
+        INSERT OR IGNORE INTO users (id, name)
+        VALUES (?, ?)
+    """, (user_id, name))
 
 
 def get_user(user_id):
@@ -429,10 +431,12 @@ def get_family_members(user_id):
     
 def set_user_profile(user_id, name, color):
     cur.execute("""
-        UPDATE users
-        SET name=?, color=?
-        WHERE id=?
-    """, (name, color, user_id))
+        INSERT INTO users (id, name, color)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            color=excluded.color
+    """, (user_id, name, color))
     conn.commit()
 
 
