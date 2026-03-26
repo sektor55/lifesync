@@ -399,14 +399,21 @@ async def show_stats(c: CallbackQuery):
 # =========================
 @dp.callback_query(F.data == "graph_expense")
 async def graph_expense(c: CallbackQuery):
-    data = get_expense_stats(c.from_user.id)
+    users = get_family_members(c.from_user.id)
 
-    if not data:
+    all_data = {}
+
+    for uid in users:
+        data = get_expense_stats(uid)
+        for cat, amount in data:
+            all_data[cat] = all_data.get(cat, 0) + amount
+
+    if not all_data:
         await c.message.answer("Нет данных", reply_markup=keyboards.budget_menu())
         return
 
-    cats = [x[0] for x in data]
-    vals = [x[1] for x in data]
+    cats = list(all_data.keys())
+    vals = list(all_data.values())
 
     total = sum(vals)
 
@@ -418,7 +425,7 @@ async def graph_expense(c: CallbackQuery):
 
     colors = ["#00c896", "#ff6b6b", "#4dabf7", "#ffd43b", "#845ef7"]
 
-    wedges, texts, autotexts = plt.pie(
+    plt.pie(
         vals,
         labels=cats,
         autopct=autopct,
@@ -428,17 +435,13 @@ async def graph_expense(c: CallbackQuery):
         wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
     )
 
-    plt.setp(autotexts, size=14, weight="bold", color="white")
-    plt.setp(texts, size=16, weight="bold")
-
-    plt.title("💸 Расходы", fontsize=20, color="white", pad=20)
+    plt.title("💸 Расходы (вся семья)", fontsize=20, color="white")
 
     file_name = "expense.png"
     plt.savefig(file_name, facecolor="#1e1e2f")
     plt.close()
 
-    photo = FSInputFile(file_name)
-    await c.message.answer_photo(photo)
+    await c.message.answer_photo(FSInputFile(file_name))
     await c.message.answer("📊 Готово", reply_markup=keyboards.budget_menu())
 
 
@@ -447,14 +450,21 @@ async def graph_expense(c: CallbackQuery):
 # =========================
 @dp.callback_query(F.data == "graph_income")
 async def graph_income(c: CallbackQuery):
-    data = get_income_stats(c.from_user.id)
+    users = get_family_members(c.from_user.id)
 
-    if not data:
+    all_data = {}
+
+    for uid in users:
+        data = get_income_stats(uid)
+        for cat, amount in data:
+            all_data[cat] = all_data.get(cat, 0) + amount
+
+    if not all_data:
         await c.message.answer("Нет данных", reply_markup=keyboards.budget_menu())
         return
 
-    cats = [x[0] for x in data]
-    vals = [x[1] for x in data]
+    cats = list(all_data.keys())
+    vals = list(all_data.values())
 
     total = sum(vals)
 
@@ -466,7 +476,7 @@ async def graph_income(c: CallbackQuery):
 
     colors = ["#51cf66", "#339af0", "#fcc419", "#ff922b", "#f06595"]
 
-    wedges, texts, autotexts = plt.pie(
+    plt.pie(
         vals,
         labels=cats,
         autopct=autopct,
@@ -476,17 +486,13 @@ async def graph_income(c: CallbackQuery):
         wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
     )
 
-    plt.setp(autotexts, size=14, weight="bold", color="white")
-    plt.setp(texts, size=16, weight="bold")
-
-    plt.title("💰 Доходы", fontsize=20, color="white", pad=20)
+    plt.title("💰 Доходы (вся семья)", fontsize=20, color="white")
 
     file_name = "income.png"
     plt.savefig(file_name, facecolor="#1e1e2f")
     plt.close()
 
-    photo = FSInputFile(file_name)
-    await c.message.answer_photo(photo)
+    await c.message.answer_photo(FSInputFile(file_name))
     await c.message.answer("📊 Готово", reply_markup=keyboards.budget_menu())
     
     # =========================
@@ -570,7 +576,7 @@ async def habit_type(c: CallbackQuery, state: FSMContext):
     await c.message.edit_text("Тип задачи", reply_markup=kb)
 
 
-@dp.callback_query(AddHabit.days, F.data.startswith("day_"))
+@dp.callback_query(F.data.startswith("day_"))
 async def toggle_days(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
@@ -642,7 +648,7 @@ def get_minutes_kb(hour):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-@dp.callback_query(AddHabit.days, F.data == "days_done")
+@dp.callback_query(F.data == "days_done")
 async def days_done(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
@@ -964,11 +970,14 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
             parse_mode="HTML"
         )
-    
+
+@dp.callback_query(F.data == "habit_list")
+async def habit_list(c: CallbackQuery):
+    await show_my_habits(c)
+ 
 @dp.callback_query(F.data == "my_family")
 async def my_family(c: CallbackQuery):
     await show_my_habits(c, mode="family")
-
 
 @dp.callback_query(F.data == "my_personal")
 async def my_personal(c: CallbackQuery):
@@ -1394,25 +1403,37 @@ async def set_timezone(c: CallbackQuery, state: FSMContext):
 
     tz = int(c.data.split("_")[1])
 
-    # 👉 сохраняем в FSM (для старта)
-    await state.update_data(timezone=tz)
+    data = await state.get_data()
 
-    # 👉 переводим в следующий шаг
-    await state.set_state(StartStates.color)
+    # 🔥 ЕСЛИ это старт
+    if "name" in data:
+        await state.update_data(timezone=tz)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
-            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
-            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
-            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
-        ]
-    ])
+        await state.set_state(StartStates.color)
 
-    await c.message.edit_text(
-        "🎨 Выбери цвет привычек:",
-        reply_markup=kb
-    )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+                InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+                InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
+                InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
+            ]
+        ])
+
+        await c.message.edit_text(
+            "🎨 Выбери цвет привычек:",
+            reply_markup=kb
+        )
+
+    # 🔥 ЕСЛИ это настройки
+    else:
+        cur.execute(
+            "UPDATE users SET timezone=? WHERE id=?",
+            (tz, c.from_user.id)
+        )
+        conn.commit()
+
+        await c.message.answer("✅ Часовой пояс обновлён")
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
@@ -1474,12 +1495,39 @@ async def open_habits(m: Message):
     
 @dp.message(F.text == "📊 Аналитика")
 async def open_stats(m: Message):
-    text = get_stats_text(m.from_user.id)
+    await stats_inline(m)
 
-    await m.answer(
-        text,
-        reply_markup=keyboards.stats_menu()
-    )  
+async def stats_inline(m: Message):
+    users = get_family_members(m.from_user.id)
+
+    text = "📊 Аналитика\n\n"
+
+    for uid in users:
+        profile = get_user_profile(uid)
+        name = profile[0] if profile and profile[0] else f"id:{uid}"
+
+        expenses = get_expense_stats(uid)
+        income = get_income_stats(uid)
+
+        text += f"👤 <b>{name}</b>\n"
+
+        text += "💰 Доходы:\n"
+        if income:
+            for cat, amount in income:
+                text += f"{cat} — {amount} ₽\n"
+        else:
+            text += "нет данных\n"
+
+        text += "\n💸 Расходы:\n"
+        if expenses:
+            for cat, amount in expenses:
+                text += f"{cat} — {amount} ₽\n"
+        else:
+            text += "нет данных\n"
+
+        text += "\n────────────\n\n"
+
+    await m.answer(text, reply_markup=keyboards.stats_menu())    
 
 def get_stats_text(user_id):
     users = get_family_members(user_id)
