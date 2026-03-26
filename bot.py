@@ -13,7 +13,7 @@ from aiogram.fsm.context import FSMContext
 
 from config import TOKEN
 from database import *
-from keyboards import get_main_menu as main_menu *
+from keyboards import get_main_menu as main_menu 
 from states import *
 USER_MODE = {}
 
