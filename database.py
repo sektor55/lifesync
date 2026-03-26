@@ -437,13 +437,3 @@ def get_user_profile(user_id):
     """, (user_id,))
     return cur.fetchone()    
     
-def get_family_id(user_id):
-    conn = sqlite3.connect("database.db")
-    cur = conn.cursor()
-
-    cur.execute("SELECT family_id FROM users WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-
-    conn.close()
-
-    return row[0] if row else None    

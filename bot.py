@@ -11,7 +11,6 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 
-from db import get_family_id
 from config import TOKEN
 from database import *
 import keyboards
@@ -1653,6 +1652,10 @@ async def family_menu(m: Message):
 
         await m.answer(f"Ты в семье: <b>{name}</b>", reply_markup=kb, parse_mode="HTML")
 
+def get_family_id(user_id):
+    cur.execute("SELECT family_id FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    return row[0] if row else None   
 
 # -------- СОЗДАНИЕ --------
 
