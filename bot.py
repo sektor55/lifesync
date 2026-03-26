@@ -901,26 +901,26 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         all_done_today = True
 
         for d in days_list:
-        key = today + "_" + d
+            key = today + "_" + d
 
-        done_count = 0
-        total_users = len(users)
+            done_count = 0
+            total_users = len(users)
 
-        for uid in users:
-            log_map = user_logs.get(uid, {})
+            for uid in users:
+                log_map = user_logs.get(uid, {})
 
-            if key in log_map and log_map[key] == "done":
-                done_count += 1
+                if key in log_map and log_map[key] == "done":
+                    done_count += 1
 
-        if total_users == 1:
-            bar += "🟩 " if done_count == 1 else "⬜ "
-        else:
-            if done_count == 0:
-                bar += "⬜ "
-            elif done_count == total_users:
-                bar += "🟩 "
+            if total_users == 1:
+                bar += "🟩 " if done_count == 1 else "⬜ "
             else:
-                bar += "🟨 "
+                if done_count == 0:
+                    bar += "⬜ "
+                elif done_count == total_users:
+                    bar += "🟩 "
+                else:
+                    bar += "🟨 "
 
         # 🔥 вчера
         yesterday_done = True
