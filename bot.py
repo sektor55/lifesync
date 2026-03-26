@@ -836,7 +836,7 @@ async def render_habits(user_id):
 
             if key in log_map:
                 if log_map[key] == "done":
-                    color = get_user_color(uid)
+                    color = get_user_color(user_id)
                     bar += color
                 elif log_map[key] == "skip":
                     bar += "🟥"
@@ -919,7 +919,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(uid)
+                        color = get_user_color(user_id)
                         block += color if color else "🟩"
                     elif log_map[key] == "skip":
                         block += "🟥"
@@ -1220,7 +1220,7 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(uid)
+                        color = get_user_color(user_id)
                         block += color if color else "🟩"
                     elif log_map[key] == "skip":
                         block += "🟥"
@@ -1740,16 +1740,6 @@ async def leave_family_handler(c: CallbackQuery):
 # НАСТРОЙКИ
 # =========================    
     
-dp.callback_query(F.data == "set_color")
-async def set_color(c: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
-         InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
-         InlineKeyboardButton(text="🟪", callback_data="color_🟪")]
-    ])
-    await c.message.answer("Выбери цвет", reply_markup=kb)
-
-
 
 # =========================
 # СТАРТ

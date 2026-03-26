@@ -39,9 +39,9 @@ def init_habits_update():
         pass 
         
     try:
-    cur.execute("ALTER TABLE users ADD COLUMN family_id INTEGER")
-except:
-    pass            
+        cur.execute("ALTER TABLE users ADD COLUMN family_id INTEGER")
+    except:
+        pass            
 
     # ===== USERS =====
     cur.execute("""
@@ -373,13 +373,13 @@ def create_family(user_id, name, password):
 
 def join_family(user_id, family_id, password):
     cur.execute(
-        "SELECT password FROM families WHERE family_id=?",
+        "SELECT name, password FROM families WHERE family_id=?",
         (family_id,)
     )
     res = cur.fetchone()
 
-    if not res or res[0] != password:
-        return False
+    if not res or res[1] != password:
+        return False, None
 
     cur.execute(
         "INSERT INTO family_members VALUES (?, ?)",
@@ -387,7 +387,7 @@ def join_family(user_id, family_id, password):
     )
 
     conn.commit()
-    return True
+    return True, res[0]
 
 
 def get_family(user_id):
@@ -443,6 +443,6 @@ def get_user_profile(user_id):
     return cur.fetchone()    
     
 def get_family_id(user_id):
-    cur.execute("SELECT family_id FROM users WHERE user_id = ?", (user_id,))
+    cur.execute("SELECT family_id FROM users WHERE id = ?", (user_id,))
     row = cur.fetchone()
     return row[0] if row else None
