@@ -392,6 +392,15 @@ async def stats(c: CallbackQuery):
 
     await c.message.answer(text, reply_markup=stats_menu())
 
+@dp.callback_query(F.data == "finance_stats")
+async def show_stats(c: CallbackQuery):
+    text = get_stats_text(c.from_user.id)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="finance")]
+    ])
+
+    await c.message.edit_text(text, reply_markup=kb)
 
 # =========================
 # 📉 ГРАФИК РАСХОДОВ
@@ -892,28 +901,26 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
         all_done_today = True
 
         for d in days_list:
-            key = today + "_" + d
+        key = today + "_" + d
 
-            day_block = ""
+        done_count = 0
+        total_users = len(users)
 
-            for uid in users:
-                log_map = user_logs.get(uid, {})
+        for uid in users:
+            log_map = user_logs.get(uid, {})
 
-                profile = get_user_profile(uid)
-                color = profile[1] if profile and profile[1] else "🟩"
+            if key in log_map and log_map[key] == "done":
+                done_count += 1
 
-                if key in log_map:
-                    if log_map[key] == "done":
-                        day_block += color
-                    elif log_map[key] == "skip":
-                        day_block += "🟥"
-                        all_done_today = False
-                else:
-                    day_block += "⬜"
-                    all_done_today = False
-
-            # 👉 объединяем день (без пробелов)
-            bar += day_block + " "
+        if total_users == 1:
+            bar += "🟩 " if done_count == 1 else "⬜ "
+        else:
+            if done_count == 0:
+                bar += "⬜ "
+            elif done_count == total_users:
+                bar += "🟩 "
+            else:
+                bar += "🟨 "
 
         # 🔥 вчера
         yesterday_done = True
@@ -1406,8 +1413,14 @@ async def settings_menu(m: Message):
         "⚙️ Настройки",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="settings_tz")]
+            [InlineKeyboardButton(text="🎨 Цвет", callback_data="set_color")]
         ])
     )
+
+@dp.callback_query(F.data == "set_color")
+async def change_color(c: CallbackQuery, state: FSMContext):
+    await state.set_state(StartStates.color)
+    await c.message.answer("Отправь новый цвет (например 🟦)")
 
 @dp.callback_query(F.data == "settings_tz")
 async def settings_timezone(c: CallbackQuery):
@@ -1450,40 +1463,115 @@ async def open_stats(m: Message):
     )  
 
 def get_stats_text(user_id):
-    expenses = get_expense_stats(user_id)
-    income = get_income_stats(user_id)
-
-    total_expense = sum(x[1] for x in expenses) if expenses else 0
-    total_income = sum(x[1] for x in income) if income else 0
-    balance = total_income - total_expense
+    users = get_family_members(user_id)
 
     text = "📊 Аналитика\n\n"
 
-    # ДОХОДЫ
-    text += "💰 Доходы:\n"
-    if income:
-        for cat, amount in income:
-            percent = int(amount / total_income * 100) if total_income else 0
-            text += f"{cat} — {amount} ₽ ({percent}%)\n"
-    else:
-        text += "нет данных\n"
+    for uid in users:
+        profile = get_user_profile(uid)
+        name = profile[0] if profile else f"id:{uid}"
 
-    text += "\n💸 Расходы:\n"
-    if expenses:
-        for cat, amount in expenses:
-            percent = int(amount / total_expense * 100) if total_expense else 0
-            text += f"{cat} — {amount} ₽ ({percent}%)\n"
-    else:
-        text += "нет данных\n"
+        expenses = get_expense_stats(uid)
+        income = get_income_stats(uid)
 
-    text += f"\n📈 Баланс: {balance} ₽"
-    text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
+        total_expense = sum(x[1] for x in expenses) if expenses else 0
+        total_income = sum(x[1] for x in income) if income else 0
+        balance = total_income - total_expense
 
-    return text    
+        text += f"👤 <b>{name}</b>\n"
+
+        # ДОХОДЫ
+        text += "💰 Доходы:\n"
+        if income:
+            for cat, amount in income:
+                percent = int(amount / total_income * 100) if total_income else 0
+                text += f"{cat} — {amount} ₽ ({percent}%)\n"
+        else:
+            text += "нет данных\n"
+
+        # РАСХОДЫ
+        text += "\n💸 Расходы:\n"
+        if expenses:
+            for cat, amount in expenses:
+                percent = int(amount / total_expense * 100) if total_expense else 0
+                text += f"{cat} — {amount} ₽ ({percent}%)\n"
+        else:
+            text += "нет данных\n"
+
+        text += f"\n📈 Баланс: {balance} ₽"
+        text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
+
+        text += "\n────────────\n\n"
+
+    return text
+
+class StartStates(StatesGroup):
+    name = State()
+    timezone = State()
+    color = State()
+
+
+@dp.message(CommandStart())
+async def start(m: Message, state: FSMContext):
+    await state.set_state(StartStates.name)
+    await m.answer(
+        "👋 Добро пожаловать!\n\n"
+        "Этот бот поможет тебе:\n"
+        "— контролировать финансы\n"
+        "— внедрять привычки\n"
+        "— работать вместе с семьёй\n\n"
+        "Как тебя назвать?"
+    )
+
+@dp.message(StartStates.name)
+async def set_name(m: Message, state: FSMContext):
+    await state.update_data(name=m.text)
+    await state.set_state(StartStates.timezone)
+
+    await m.answer("Выбери часовой пояс (например: Europe/Moscow)")
+
+
+@dp.message(StartStates.timezone)
+async def set_timezone(m: Message, state: FSMContext):
+    await state.update_data(timezone=m.text)
+    await state.set_state(StartStates.color)
+
+    await m.answer(
+        "🎨 Выбери цвет своих привычек:\n\n"
+        "Он будет отображаться в прогрессе и отличать тебя от других участников.\n\n"
+        "Примеры:\n"
+        "🟩 🟦 🟪 🟧 🟥\n\n"
+        "Отправь один из них"
+    )
+
+
+@dp.message(StartStates.color)
+async def set_color(m: Message, state: FSMContext):
+    data = await state.get_data()
+
+    save_user_profile(
+        user_id=m.from_user.id,
+        name=data["name"],
+        timezone=data["timezone"],
+        color=m.text.strip()
+    )
+
+    await state.clear()
+
+    await m.answer("✅ Готово! Ты настроен.")    
     
 # =========================
 # СЕМЬЯ
 # =========================
+
+from aiogram.fsm.state import State, StatesGroup
+
+class FamilyStates(StatesGroup):
+    create_name = State()
+    create_password = State()
+    join_code = State()
+    join_password = State()
+
 
 @dp.message(F.text == "👥 Семья")
 async def family_menu(m: Message):
@@ -1496,42 +1584,114 @@ async def family_menu(m: Message):
         ])
         await m.answer("Ты не в семье", reply_markup=kb)
     else:
+        name = get_family_name(family_id)
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📎 Мой код", callback_data="family_code")],
             [InlineKeyboardButton(text="🚪 Выйти", callback_data="leave_family")]
         ])
-        await m.answer("Ты в семье", reply_markup=kb)
 
+        await m.answer(f"Ты в семье: <b>{name}</b>", reply_markup=kb, parse_mode="HTML")
+
+
+# -------- СОЗДАНИЕ --------
 
 @dp.callback_query(F.data == "create_family")
-async def create_family_handler(c: CallbackQuery):
-    fid = create_family(c.from_user.id)
-    await c.message.answer(f"Код семьи: {fid}")
+async def create_family_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(FamilyStates.create_name)
+    await c.message.answer("Введи название семьи")
 
+
+@dp.message(FamilyStates.create_name)
+async def create_family_name(m: Message, state: FSMContext):
+    await state.update_data(name=m.text)
+    await state.set_state(FamilyStates.create_password)
+    await m.answer("Придумай пароль для семьи")
+
+
+@dp.message(FamilyStates.create_password)
+async def create_family_password(m: Message, state: FSMContext):
+    data = await state.get_data()
+
+    fid = create_family(
+        owner_id=m.from_user.id,
+        name=data["name"],
+        password=m.text.strip()
+    )
+
+    await state.clear()
+
+    await m.answer(
+        f"Семья создана: <b>{data['name']}</b>\nКод: <code>{fid}</code>",
+        parse_mode="HTML"
+    )
+
+
+# -------- ВСТУПЛЕНИЕ --------
+
+@dp.callback_query(F.data == "join_family")
+async def join_family_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(FamilyStates.join_code)
+    await c.message.answer("Введи код семьи")
+
+
+@dp.message(FamilyStates.join_code)
+async def join_family_code(m: Message, state: FSMContext):
+    await state.update_data(code=m.text.strip())
+    await state.set_state(FamilyStates.join_password)
+    await m.answer("Введи пароль")
+
+
+@dp.message(FamilyStates.join_password)
+async def join_family_password(m: Message, state: FSMContext):
+    data = await state.get_data()
+
+    success, name = join_family(
+        user_id=m.from_user.id,
+        code=data["code"],
+        password=m.text.strip()
+    )
+
+    await state.clear()
+
+    if success:
+        await m.answer(f"Добро пожаловать в семью: <b>{name}</b>", parse_mode="HTML")
+    else:
+        await m.answer("Неверный код или пароль")
+
+
+# -------- ПРОЧЕЕ --------
 
 @dp.callback_query(F.data == "family_code")
 async def show_code(c: CallbackQuery):
     fid = get_family_id(c.from_user.id)
-    await c.message.answer(f"Код: {fid}")
-
-
-@dp.callback_query(F.data == "join_family")
-async def join_family_start(c: CallbackQuery, state: FSMContext):
-    await state.set_state("join_family")
-    await c.message.answer("Введи код семьи")
-
-
-@dp.message(StateFilter("join_family"))
-async def join_family_input(m: Message, state: FSMContext):
-    join_family(m.from_user.id, m.text.strip())
-    await state.clear()
-    await m.answer("Ты в семье")
+    await c.message.answer(f"Код семьи: <code>{fid}</code>", parse_mode="HTML")
 
 
 @dp.callback_query(F.data == "leave_family")
 async def leave_family_handler(c: CallbackQuery):
     leave_family(c.from_user.id)
     await c.message.answer("Ты вышел из семьи")
+    
+# =========================
+# НАСТРОЙКИ
+# =========================    
+    
+dp.callback_query(F.data == "set_color")
+async def set_color(c: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+         InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+         InlineKeyboardButton(text="🟪", callback_data="color_🟪")]
+    ])
+    await c.message.answer("Выбери цвет", reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("color_"))
+async def save_color(c: CallbackQuery):
+    color = c.data.split("_")[1]
+    set_user_profile(c.from_user.id, "User", color)
+    await c.answer("Сохранено")    
 
 
 # =========================

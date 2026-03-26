@@ -107,10 +107,20 @@ CREATE TABLE IF NOT EXISTS habits(
 )
 """)
 
-cur.execute("""CREATE TABLE IF NOT EXISTS family(
-user_id INTEGER,
-family_id TEXT
-)""")
+cur.execute("""
+CREATE TABLE IF NOT EXISTS families(
+    family_id TEXT,
+    name TEXT,
+    password TEXT
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS family_members(
+    user_id INTEGER,
+    family_id TEXT
+)
+""")
 
 cur.execute("""CREATE TABLE IF NOT EXISTS rules(
 user_id INTEGER,
@@ -339,55 +349,78 @@ def get_user_timezone(user_id):
 
 import uuid
 
-
-def create_family(user_id):
-    family_id = str(uuid.uuid4())[:8]
+def create_family(user_id, name, password):
+    family_id = str(uuid.uuid4())[:6]
 
     cur.execute(
-        "INSERT INTO family (user_id, family_id) VALUES (?, ?)",
+        "INSERT INTO families VALUES (?, ?, ?)",
+        (family_id, name, password)
+    )
+
+    cur.execute(
+        "INSERT INTO family_members VALUES (?, ?)",
         (user_id, family_id)
     )
-    conn.commit()
 
+    conn.commit()
     return family_id
 
 
-def join_family(user_id, family_id):
+def join_family(user_id, family_id, password):
     cur.execute(
-        "INSERT INTO family (user_id, family_id) VALUES (?, ?)",
+        "SELECT password FROM families WHERE family_id=?",
+        (family_id,)
+    )
+    res = cur.fetchone()
+
+    if not res or res[0] != password:
+        return False
+
+    cur.execute(
+        "INSERT INTO family_members VALUES (?, ?)",
         (user_id, family_id)
     )
+
     conn.commit()
+    return True
+
+
+def get_family(user_id):
+    cur.execute(
+        """SELECT f.family_id, f.name
+           FROM families f
+           JOIN family_members m ON f.family_id = m.family_id
+           WHERE m.user_id=?""",
+        (user_id,)
+    )
+    return cur.fetchone()
 
 
 def leave_family(user_id):
     cur.execute(
-        "DELETE FROM family WHERE user_id=?",
+        "DELETE FROM family_members WHERE user_id=?",
         (user_id,)
     )
     conn.commit()
 
 
-def get_family_id(user_id):
+def get_family_members(user_id):
     cur.execute(
-        "SELECT family_id FROM family WHERE user_id=?",
+        "SELECT family_id FROM family_members WHERE user_id=?",
         (user_id,)
     )
     res = cur.fetchone()
-    return res[0] if res else None
 
-
-def get_family_members(user_id):
-    family_id = get_family_id(user_id)
-
-    if not family_id:
+    if not res:
         return [user_id]
 
+    family_id = res[0]
+
     cur.execute(
-        "SELECT user_id FROM family WHERE family_id=?",
+        "SELECT user_id FROM family_members WHERE family_id=?",
         (family_id,)
     )
-    return [x[0] for x in cur.fetchall()]    
+    return [x[0] for x in cur.fetchall()]
     
 def set_user_profile(user_id, name, color):
     cur.execute("""

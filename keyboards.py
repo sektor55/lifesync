@@ -1,12 +1,19 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-def main_menu():
+def get_main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="💰 Финансы"), KeyboardButton(text="🏋️ Привычки")],
-            [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="👥 Семья")],
-            [KeyboardButton(text="💎 Подписка"), KeyboardButton(text="⚙️ Настройки")]
+            [
+                KeyboardButton(text="💰 Финансы"),
+                KeyboardButton(text="📋 Привычки")
+            ],
+            [
+                KeyboardButton(text="👥 Семья"),
+                KeyboardButton(text="⚙️ Настройки"),
+                KeyboardButton(text="💎 Подписка"),
+                KeyboardButton(text="❓ FAQ")
+            ]
         ],
         resize_keyboard=True
     )
@@ -15,6 +22,7 @@ def budget_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💸 Расход", callback_data="expense")],
         [InlineKeyboardButton(text="💰 Доход", callback_data="income")],
+        [InlineKeyboardButton(text="📊 Аналитика", callback_data="finance_stats")]
     ])
 
 def categories_menu():
