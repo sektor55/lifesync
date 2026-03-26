@@ -1389,28 +1389,30 @@ async def reminder_worker(bot: Bot):
 
 
 @dp.callback_query(F.data.startswith("tz_"))
-async def set_timezone(c: CallbackQuery):
+async def set_timezone(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
     tz = int(c.data.split("_")[1])
 
-    add_user(c.from_user.id)
-    save_user_timezone(c.from_user.id, tz)
+    # 👉 сохраняем в FSM (для старта)
+    await state.update_data(timezone=tz)
 
-    try:
-        await c.message.edit_text(
-            f"✅ Время установлено (МСК {tz - 3:+d})",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
-            ])
-        )
-    except:
-        await c.message.answer(
-            f"✅ Время установлено (МСК {tz - 3:+d})",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="settings_back")]
-            ])
-        )
+    # 👉 переводим в следующий шаг
+    await state.set_state(StartStates.color)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
+            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
+        ]
+    ])
+
+    await c.message.edit_text(
+        "🎨 Выбери цвет привычек:",
+        reply_markup=kb
+    )
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
