@@ -1497,7 +1497,8 @@ def get_stats_text(user_id):
         total_income = sum(x[1] for x in income) if income else 0
         balance = total_income - total_expense
 
-        text += f"👤 <b>{name}</b>\n"
+        if len(users) > 1:
+            text += f"👤 <b>{name}</b>\n"
 
         # ДОХОДЫ
         text += "💰 Доходы:\n"
@@ -1541,27 +1542,6 @@ async def set_name(m: Message, state: FSMContext):
         reply_markup=timezone_kb()
     )
 
-
-@dp.message(StartStates.timezone)
-async def set_timezone(m: Message, state: FSMContext):
-    tz = int(m.text) if m.text.isdigit() else 3  # fallback
-
-    await state.update_data(timezone=tz)
-    await state.set_state(StartStates.color)
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
-            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
-            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
-            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
-        ]
-    ])
-
-    await m.answer(
-        "🎨 Выбери цвет привычек:",
-        reply_markup=kb
-    )   
     
 @dp.callback_query(F.data.startswith("color_"))
 async def set_color_callback(c: CallbackQuery, state: FSMContext):
@@ -1654,6 +1634,11 @@ async def create_family_password(m: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
+    await m.answer("👥 Меню семьи", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📎 Мой код", callback_data="family_code")],
+        [InlineKeyboardButton(text="🚪 Выйти", callback_data="leave_family")]
+    ]))
+
 
 # -------- ВСТУПЛЕНИЕ --------
 
@@ -1699,7 +1684,11 @@ async def show_code(c: CallbackQuery):
 @dp.callback_query(F.data == "leave_family")
 async def leave_family_handler(c: CallbackQuery):
     leave_family(c.from_user.id)
-    await c.message.answer("Ты вышел из семьи")
+
+    await c.message.answer(
+        "Ты вышел из семьи",
+        reply_markup=keyboards.get_main_menu()
+    )
     
 # =========================
 # НАСТРОЙКИ

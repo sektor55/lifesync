@@ -470,3 +470,8 @@ def get_family_id(user_id):
     return res[0] if res else None
    
 ensure_family_column()   
+
+def get_family_name(family_id):
+    cur.execute("SELECT name FROM families WHERE id=?", (family_id,))
+    row = cur.fetchone()
+    return row[0] if row else "Без названия"
