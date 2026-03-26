@@ -134,12 +134,7 @@ def timezone_kb():
 
 
 # ✅ ДОБАВЛЕНО (новое меню статистики)
-def stats_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 График расходов", callback_data="graph_expense")],
-        [InlineKeyboardButton(text="💰 График доходов", callback_data="graph_income")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
-    ])
+
 
 
 # =========================
@@ -159,6 +154,13 @@ async def budget(c: CallbackQuery):
 @dp.callback_query(F.data == "back_main")
 async def back_main(c: CallbackQuery):
     await c.message.answer("Главное меню", reply_markup=keyboards.get_main_menu())
+    
+@dp.callback_query(F.data == "budget")
+async def back_to_budget(c: CallbackQuery):
+    await c.message.edit_text(
+        "💰 Финансы",
+        reply_markup=keyboards.budget_menu()
+    )    
 
 
 # =========================
@@ -355,60 +357,48 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
 # =========================
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
-    expense_data = get_expense_stats(c.from_user.id)
-    income_data = get_income_stats(c.from_user.id)
-
-    breakdown_income = get_category_breakdown(c.from_user.id, "income")
-    breakdown_expense = get_category_breakdown(c.from_user.id, "expense")
-
     users = get_family_members(c.from_user.id)
-
-    if not users:
-        users = [c.from_user.id]
-
-    profiles = {}
-    for u in users:
-        p = get_user_profile(u)
-        if p:
-            profiles[u] = p[0]
-
-    total_expense = sum(x[1] for x in expense_data) if expense_data else 0
-    total_income = sum(x[1] for x in income_data) if income_data else 0
 
     text = "📊 Аналитика\n\n"
 
-    # ДОХОДЫ
-    text += "💰 Доходы:\n"
-    for cat, val in income_data:
-        text += f"{cat} — {val} ₽\n"
+    for uid in users:
+        profile = get_user_profile(uid)
+        name = profile[0] if profile and profile[0] else f"id:{uid}"
 
-        users_in_cat = [x for x in breakdown_income if x[0] == cat]
+        expenses = get_expense_stats(uid)
+        income = get_income_stats(uid)
 
-        if len(users_in_cat) > 1:
-            for _, uid, amount in users_in_cat:
-                name = profiles.get(uid, str(uid))
-                text += f"   {name} — {amount}\n"
+        total_expense = sum(x[1] for x in expenses) if expenses else 0
+        total_income = sum(x[1] for x in income) if income else 0
 
-    # РАСХОДЫ
-    text += "\n💸 Расходы:\n"
-    for cat, val in expense_data:
-        text += f"{cat} — {val} ₽\n"
+        text += f"👤 <b>{name}</b>\n"
 
-        users_in_cat = [x for x in breakdown_expense if x[0] == cat]
+        # ДОХОДЫ
+        text += "💰 Доходы:\n"
+        if income:
+            for cat, amount in income:
+                text += f"{cat} — {amount} ₽\n"
+        else:
+            text += "нет данных\n"
 
-        if len(users_in_cat) > 1:
-            for _, uid, amount in users_in_cat:
-                name = profiles.get(uid, str(uid))
-                text += f"   {name} — {amount}\n"
+        # РАСХОДЫ
+        text += "\n💸 Расходы:\n"
+        if expenses:
+            for cat, amount in expenses:
+                text += f"{cat} — {amount} ₽\n"
+        else:
+            text += "нет данных\n"
 
-    await c.message.answer(text, reply_markup=stats_menu())
+        text += "\n────────────\n\n"
+
+    await c.message.answer(text, reply_markup=keyboards.stats_menu())
 
 @dp.callback_query(F.data == "finance_stats")
 async def show_stats(c: CallbackQuery):
     text = get_stats_text(c.from_user.id)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="finance")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
     ])
 
     await c.message.edit_text(text, reply_markup=kb)
@@ -1494,7 +1484,7 @@ async def open_stats(m: Message):
 
     await m.answer(
         text,
-        reply_markup=stats_menu()
+        reply_markup=keyboards.stats_menu()
     )  
 
 def get_stats_text(user_id):
@@ -1504,7 +1494,7 @@ def get_stats_text(user_id):
 
     for uid in users:
         profile = get_user_profile(uid)
-        name = profile[0] if profile else f"id:{uid}"
+        name = profile[0] if profile and profile[0] else f"id:{uid}"
 
         expenses = get_expense_stats(uid)
         income = get_income_stats(uid)
@@ -1636,10 +1626,7 @@ async def family_menu(m: Message):
 
         await m.answer(f"Ты в семье: <b>{name}</b>", reply_markup=kb, parse_mode="HTML")
 
-def get_family_id(user_id):
-    cur.execute("SELECT family_id FROM users WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-    return row[0] if row else None   
+ 
 
 # -------- СОЗДАНИЕ --------
 
