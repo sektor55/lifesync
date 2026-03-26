@@ -36,7 +36,12 @@ def init_habits_update():
     try:
         cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
     except:
-        pass    
+        pass 
+        
+    try:
+    cur.execute("ALTER TABLE users ADD COLUMN family_id INTEGER")
+except:
+    pass            
 
     # ===== USERS =====
     cur.execute("""
@@ -437,3 +442,7 @@ def get_user_profile(user_id):
     """, (user_id,))
     return cur.fetchone()    
     
+def get_family_id(user_id):
+    cur.execute("SELECT family_id FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    return row[0] if row else None
