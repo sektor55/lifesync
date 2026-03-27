@@ -347,7 +347,7 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
 # 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
 # =========================
 @dp.callback_query(F.data == "finance_stats")
-async def stats(c: CallbackQuery)::
+async def stats(c: CallbackQuery):
     users = get_family_members(c.from_user.id)
 
     text = "📊 Аналитика\n\n"
@@ -1425,7 +1425,7 @@ async def set_timezone(c: CallbackQuery, state: FSMContext):
         )
         conn.commit()
 
-        await c.message.answer("✅ Часовой пояс обновлён")
+        await c.message.edit_text("✅ Часовой пояс обновлён")
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
@@ -1604,7 +1604,8 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
 
     else:
         set_user_profile(c.from_user.id, "User", color)
-        await c.answer("✅ Цвет сохранён")  
+
+        await c.message.edit_text("✅ Цвет сохранён")  
     
     
 # =========================
