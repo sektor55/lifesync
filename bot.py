@@ -352,35 +352,84 @@ async def stats(c: CallbackQuery):
 
     text = "📊 Аналитика\n\n"
 
+    # 🔥 собираем общие данные
+    total_income_map = {}
+    total_expense_map = {}
+
+    # 🔥 по пользователям (для детализации)
+    user_income_map = {}
+    user_expense_map = {}
+
     for uid in users:
-        profile = get_user_profile(uid)
-        name = profile[0] if profile and profile[0] else f"id:{uid}"
-
-        expenses = get_expense_stats(uid)
         income = get_income_stats(uid)
+        expense = get_expense_stats(uid)
 
-        total_expense = sum(x[1] for x in expenses) if expenses else 0
-        total_income = sum(x[1] for x in income) if income else 0
+        user_income_map[uid] = dict(income)
+        user_expense_map[uid] = dict(expense)
 
-        text += f"👤 <b>{name}</b>\n"
+        for cat, amount in income:
+            total_income_map[cat] = total_income_map.get(cat, 0) + amount
 
-        # ДОХОДЫ
-        text += "💰 Доходы:\n"
-        if income:
-            for cat, amount in income:
-                text += f"{cat} — {amount} ₽\n"
-        else:
-            text += "нет данных\n"
+        for cat, amount in expense:
+            total_expense_map[cat] = total_expense_map.get(cat, 0) + amount
 
-        # РАСХОДЫ
-        text += "\n💸 Расходы:\n"
-        if expenses:
-            for cat, amount in expenses:
-                text += f"{cat} — {amount} ₽\n"
-        else:
-            text += "нет данных\n"
+    total_income = sum(total_income_map.values())
+    total_expense = sum(total_expense_map.values())
 
-        text += "\n────────────\n\n"
+    # =========================
+    # 💰 ДОХОДЫ
+    # =========================
+    text += "💰 Доходы:\n"
+
+    if total_income_map:
+        for cat, amount in total_income_map.items():
+            percent = int(amount / total_income * 100) if total_income else 0
+
+            text += f"{cat} — {amount} ₽ ({percent}%)\n"
+
+            # детализация по пользователям
+            contributors = []
+            for uid in users:
+                val = user_income_map.get(uid, {}).get(cat, 0)
+                if val > 0:
+                    profile = get_user_profile(uid)
+                    name = profile[0] if profile and profile[0] else f"id:{uid}"
+                    contributors.append((name, val))
+
+            if len(contributors) > 1:
+                for name, val in contributors:
+                    text += f"  👤{name} — {val} ₽\n"
+
+    else:
+        text += "нет данных\n"
+
+    # =========================
+    # 💸 РАСХОДЫ
+    # =========================
+    text += "\n💸 Расходы:\n"
+
+    if total_expense_map:
+        for cat, amount in total_expense_map.items():
+            percent = int(amount / total_expense * 100) if total_expense else 0
+
+            text += f"{cat} — {amount} ₽ ({percent}%)\n"
+
+            contributors = []
+            for uid in users:
+                val = user_expense_map.get(uid, {}).get(cat, 0)
+                if val > 0:
+                    profile = get_user_profile(uid)
+                    name = profile[0] if profile and profile[0] else f"id:{uid}"
+                    contributors.append((name, val))
+
+            if len(contributors) > 1:
+                for name, val in contributors:
+                    text += f"  👤{name} — {val} ₽\n"
+
+    else:
+        text += "нет данных\n"
+
+    text += "\n────────────\n"
 
     await c.message.answer(text, reply_markup=keyboards.stats_menu())
 
@@ -850,8 +899,18 @@ async def render_habits(user_id):
 async def show_my_habits(c: CallbackQuery, mode="personal"):
     USER_MODE[c.from_user.id] = mode
 
-    habits = get_habits(c.from_user.id)
+    # 🔥 получаем всех участников
     users = get_family_members(c.from_user.id)
+
+    # 🔥 собираем ВСЕ привычки семьи (без дублей)
+    all_habits = []
+    for uid in users:
+        user_habits = get_habits(uid)
+        for h in user_habits:
+            if not any(existing[0] == h[0] for existing in all_habits):
+                all_habits.append(h)
+
+    habits = all_habits
 
     from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
@@ -870,13 +929,19 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         days_list = days.split(",")
 
-        # 🔥 собираем логи всех пользователей
+        # 🔥 ВАЖНО: пользователи для отображения
+        if h_type == "personal":
+            active_users = [c.from_user.id]
+        else:
+            active_users = users
+
+        # 🔥 собираем логи
         user_logs = {}
-        for uid in users:
+        for uid in active_users:
             logs = get_habit_logs(hid, uid)
             user_logs[uid] = {l[0]: l[1] for l in logs}
 
-        # 🔥 строим красивый бар
+        # 🔥 строим бар
         day_blocks = []
         day_labels = []
 
@@ -884,7 +949,8 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             key = today + "_" + d
 
             block = ""
-            for uid in users:
+
+            for uid in active_users:
                 log_map = user_logs.get(uid, {})
 
                 if key in log_map:
@@ -896,23 +962,21 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                 else:
                     block += "⬜"
 
-            # 👉 центрируем день над блоком
             width = len(block)
             label = d.center(width)
 
             day_labels.append(label)
             day_blocks.append(block)
 
-        # соединяем
-        labels_line = " ".join(day_labels)
-        bar_line = " ".join(day_blocks)
+        labels_line = "  ".join(day_labels)
+        bar_line = "  ".join(day_blocks)
 
-        # 🔥 вчера
+        # 🔥 проверка вчера
         yesterday_done = True
 
         for d in days_list:
             key = yesterday + "_" + d
-            for uid in users:
+            for uid in active_users:
                 log_map = user_logs.get(uid, {})
                 if key not in log_map or log_map[key] != "done":
                     yesterday_done = False
