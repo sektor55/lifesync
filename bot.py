@@ -346,8 +346,8 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
 # =========================
 # 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
 # =========================
-@dp.callback_query(F.data == "stats")
-async def stats(c: CallbackQuery):
+@dp.callback_query(F.data == "finance_stats")
+async def stats(c: CallbackQuery)::
     users = get_family_members(c.from_user.id)
 
     text = "📊 Аналитика\n\n"
@@ -384,15 +384,7 @@ async def stats(c: CallbackQuery):
 
     await c.message.answer(text, reply_markup=keyboards.stats_menu())
 
-@dp.callback_query(F.data == "finance_stats")
-async def show_stats(c: CallbackQuery):
-    text = get_stats_text(c.from_user.id)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="budget")]
-    ])
-
-    await c.message.edit_text(text, reply_markup=kb)
 
 # =========================
 # 📉 ГРАФИК РАСХОДОВ
