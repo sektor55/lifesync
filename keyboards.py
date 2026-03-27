@@ -6,7 +6,7 @@ def get_main_menu():
         keyboard=[
             [
                 KeyboardButton(text="💰 Финансы"),
-                KeyboardButton(text="📋 Привычки")
+                KeyboardButton(text="🏋️ Привычки")
             ],
             [
                 KeyboardButton(text="👥 Семья"),
