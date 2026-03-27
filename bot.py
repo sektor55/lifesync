@@ -899,15 +899,8 @@ async def render_habits(user_id):
 async def show_my_habits(c: CallbackQuery, mode="personal"):
     USER_MODE[c.from_user.id] = mode
 
+    habits = get_habits(c.from_user.id)
     users = get_family_members(c.from_user.id)
-
-    # 🔥 собираем привычки + владелец
-    all_habits = []
-    for uid in users:
-        user_habits = get_habits(uid)
-        for h in user_habits:
-            if not any(existing[0][0] == h[0] for existing in all_habits):
-                all_habits.append((h, uid))
 
     from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
@@ -916,11 +909,11 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
 
-    for h, owner_id in all_habits:
+    for h in habits:
         hid, name, days, h_type, time, task_type, reminder = h
 
-        # ❌ скрываем чужие личные
-        if h_type == "personal" and owner_id != c.from_user.id:
+        # ✅ фикс логики типов (ВАЖНО)
+        if h_type == "personal" and c.from_user.id not in users:
             continue
 
         if mode == "personal" and h_type != "personal":
@@ -930,11 +923,8 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         days_list = days.split(",")
 
-        # 🔥 кто участвует
-        if h_type == "personal":
-            active_users = [c.from_user.id]
-        else:
-            active_users = users
+        # 🔥 если личная — только 1 пользователь
+        active_users = [c.from_user.id] if h_type == "personal" else users
 
         # 🔥 логи
         user_logs = {}
@@ -960,27 +950,27 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                     elif log_map[key] == "skip":
                         block += "🟥"
                 else:
-                    block += "⬜️"
+                    block += "⬜"
 
-            # 🔥 ФИКС ВЕРСТКИ
-            if len(block) == 1:
-                label = f" {d} "
-            elif len(block) == 2:
-                label = f" {d} "
-            elif len(block) == 3:
-                label = d.center(5)
+            width = len(block)
+
+            # 🔥 ИДЕАЛЬНАЯ ЦЕНТРОВКА
+            if width == 1:
+                label = d  # личная привычка
             else:
-                label = d.center(len(block) * 2)
+                left = (width - len(d)) // 2
+                right = width - len(d) - left
+                label = " " * left + d + " " * right
 
-            day_labels.append(label)
             day_blocks.append(block)
+            day_labels.append(label)
 
+        # 🔥 ровный отступ между днями
         labels_line = "  ".join(day_labels)
         bar_line = "  ".join(day_blocks)
 
-        # 🔥 вчера
+        # 🔥 проверка вчера
         yesterday_done = True
-
         for d in days_list:
             key = yesterday + "_" + d
             for uid in active_users:
