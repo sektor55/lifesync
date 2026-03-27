@@ -900,12 +900,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     USER_MODE[c.from_user.id] = mode
 
     habits = get_habits(c.from_user.id)
-
-    # ❗ ВАЖНО: личные = только текущий пользователь
-    if mode == "personal":
-        users = [c.from_user.id]
-    else:
-        users = get_family_members(c.from_user.id)
+    users = get_family_members(c.from_user.id)
 
     from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
@@ -913,6 +908,8 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
+
+    DAY_WIDTH = 6  # 🔥 магия ровности
 
     for h in habits:
         hid, name, days, h_type, time, task_type, reminder = h
@@ -924,65 +921,51 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         days_list = days.split(",")
 
-        # логи
+        active_users = [c.from_user.id] if h_type == "personal" else users
+
         user_logs = {}
-        for uid in users:
+        for uid in active_users:
             logs = get_habit_logs(hid, uid)
             user_logs[uid] = {l[0]: l[1] for l in logs}
 
-        blocks = []
-        labels = []
+        label_parts = []
+        bar_parts = []
 
         for d in days_list:
             key = today + "_" + d
 
             block = ""
-            for uid in users:
+
+            for uid in active_users:
                 log_map = user_logs.get(uid, {})
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(uid)
-                        block += color if color else "🟩"
+                        block += get_user_color(uid) or "🟩"
                     elif log_map[key] == "skip":
                         block += "🟥"
                 else:
                     block += "⬜"
 
-            blocks.append(block)
+            # 🔥 ЛИЧНЫЕ — 1 квадрат
+            if h_type == "personal":
+                block = block[:1]
 
-            # 🔥 ГЛАВНОЕ — правильное позиционирование текста
-            n = len(block)
+            # 🔥 центрируем внутри фикс ширины
+            label = d.center(DAY_WIDTH)
+            block = block.center(DAY_WIDTH)
 
-            if n == 1:
-                label = d  # просто над квадратом
+            label_parts.append(label)
+            bar_parts.append(block)
 
-            elif n % 2 == 0:
-                # ЧЁТНОЕ (2,4...)
-                # центр между
-                left = (n // 2) - 1
-                right = n - left - 2
-                label = " " * left + d + " " * right
-
-            else:
-                # НЕЧЁТНОЕ (3,5...)
-                # центр на средний квадрат
-                center = n // 2
-                left = center
-                right = n - center - 1
-                label = " " * left + d + " " * right
-
-            labels.append(label)
-
-        # соединение
-        labels_line = "  ".join(labels)
-        bar_line = "  ".join(blocks)
+        labels_line = " ".join(label_parts)
+        bar_line = " ".join(bar_parts)
 
         # вчера
         yesterday_done = True
         for d in days_list:
             key = yesterday + "_" + d
-            for uid in users:
+            for uid in active_users:
                 log_map = user_logs.get(uid, {})
                 if key not in log_map or log_map[key] != "done":
                     yesterday_done = False
