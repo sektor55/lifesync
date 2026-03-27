@@ -901,13 +901,13 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
     users = get_family_members(c.from_user.id)
 
-    # 🔥 собираем привычки + запоминаем владельца
+    # 🔥 собираем привычки + владелец
     all_habits = []
     for uid in users:
         user_habits = get_habits(uid)
         for h in user_habits:
             if not any(existing[0][0] == h[0] for existing in all_habits):
-                all_habits.append((h, uid))  # 👈 сохраняем owner
+                all_habits.append((h, uid))
 
     from datetime import datetime, timedelta
     today = datetime.now().strftime("%Y-%m-%d")
@@ -919,7 +919,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     for h, owner_id in all_habits:
         hid, name, days, h_type, time, task_type, reminder = h
 
-        # ❌ ФИЛЬТР ЛИЧНЫХ
+        # ❌ скрываем чужие личные
         if h_type == "personal" and owner_id != c.from_user.id:
             continue
 
@@ -930,7 +930,7 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         days_list = days.split(",")
 
-        # 🔥 кто участвует в баре
+        # 🔥 кто участвует
         if h_type == "personal":
             active_users = [c.from_user.id]
         else:
@@ -962,15 +962,21 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                 else:
                     block += "⬜️"
 
-            # 🔥 ФИКС ВЕРСТКИ (учёт ширины эмодзи)
-            visual_width = len(block) * 2
-            label = f"{d:^{visual_width}}"
+            # 🔥 ФИКС ВЕРСТКИ
+            if len(block) == 1:
+                label = f" {d} "
+            elif len(block) == 2:
+                label = f" {d} "
+            elif len(block) == 3:
+                label = d.center(5)
+            else:
+                label = d.center(len(block) * 2)
 
             day_labels.append(label)
             day_blocks.append(block)
 
-        labels_line = " ".join(day_labels)
-        bar_line = " ".join(day_blocks)
+        labels_line = "  ".join(day_labels)
+        bar_line = "  ".join(day_blocks)
 
         # 🔥 вчера
         yesterday_done = True
@@ -1097,15 +1103,26 @@ async def choose_action(c: CallbackQuery):
     _, action, hid = c.data.split("_")
     hid = int(hid)
 
-    habits = get_habits(c.from_user.id)
-    habit = next((h for h in habits if h[0] == hid), None)
+    users = get_family_members(c.from_user.id)
+
+    habit = None
+
+    # 🔥 ищем привычку у всех
+    for uid in users:
+        habits = get_habits(uid)
+        for h in habits:
+            if h[0] == hid:
+                habit = h
+                break
+        if habit:
+            break
 
     if not habit:
         return
 
     days = habit[2].split(",")
 
-    # ✅ ЕСЛИ ТОЛЬКО 1 ДЕНЬ — НЕ СПРАШИВАЕМ
+    # ✅ если 1 день
     if len(days) == 1:
         day = days[0]
 
@@ -1131,7 +1148,7 @@ async def choose_action(c: CallbackQuery):
         await show_my_habits(c, mode=mode)
         return
 
-    # --- стандартная логика ---
+    # --- стандарт ---
     logs = get_habit_logs(hid, c.from_user.id)
 
     from datetime import datetime
