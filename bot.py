@@ -1737,13 +1737,6 @@ def get_stats_text(user_id):
 
     return text
 
-class StartStates(StatesGroup):
-    name = State()
-    timezone = State()
-    color = State()
-
-
-
 @dp.message(StartStates.name)
 async def set_name(m: Message, state: FSMContext):
     await state.update_data(name=m.text)
