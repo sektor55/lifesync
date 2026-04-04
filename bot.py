@@ -27,7 +27,7 @@ def get_user_color(user_id):
     return "🟩"
 
 # =========================
-# РАСХОД (НЕ ТРОГАЕМ)
+# РАСХОД 
 # =========================
 CATEGORIES = {
     "Еда": ["пятерочка","pyaterochka","магнит","magnit","ашан","auchan","еда","food","kfc","burger"],
