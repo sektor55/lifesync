@@ -352,17 +352,33 @@ async def stats(c: CallbackQuery):
 
     text = "📊 Аналитика\n\n"
 
-    # 🔥 собираем общие данные
     total_income_map = {}
     total_expense_map = {}
 
-    # 🔥 по пользователям (для детализации)
+    # 🔥 БЕРЕМ ТОЛЬКО ЛИЧНЫЕ ДАННЫЕ
     user_income_map = {}
     user_expense_map = {}
 
     for uid in users:
-        income = get_income_stats(uid)
-        expense = get_expense_stats(uid)
+        income = get_income_stats(uid) if len(users) == 1 else get_income_stats(uid)
+        expense = get_expense_stats(uid) if len(users) == 1 else get_expense_stats(uid)
+
+        # ❗ ФИЛЬТР: берем только его вклад
+        cur.execute("""
+            SELECT category, SUM(amount)
+            FROM transactions
+            WHERE user_id=? AND type='income'
+            GROUP BY category
+        """, (uid,))
+        income = cur.fetchall()
+
+        cur.execute("""
+            SELECT category, SUM(amount)
+            FROM transactions
+            WHERE user_id=? AND type='expense'
+            GROUP BY category
+        """, (uid,))
+        expense = cur.fetchall()
 
         user_income_map[uid] = dict(income)
         user_expense_map[uid] = dict(expense)
@@ -376,18 +392,14 @@ async def stats(c: CallbackQuery):
     total_income = sum(total_income_map.values())
     total_expense = sum(total_expense_map.values())
 
-    # =========================
-    # 💰 ДОХОДЫ
-    # =========================
+    # ДОХОДЫ
     text += "💰 Доходы:\n"
 
     if total_income_map:
         for cat, amount in total_income_map.items():
             percent = int(amount / total_income * 100) if total_income else 0
-
             text += f"{cat} — {amount} ₽ ({percent}%)\n"
 
-            # детализация по пользователям
             contributors = []
             for uid in users:
                 val = user_income_map.get(uid, {}).get(cat, 0)
@@ -403,15 +415,12 @@ async def stats(c: CallbackQuery):
     else:
         text += "нет данных\n"
 
-    # =========================
-    # 💸 РАСХОДЫ
-    # =========================
+    # РАСХОДЫ
     text += "\n💸 Расходы:\n"
 
     if total_expense_map:
         for cat, amount in total_expense_map.items():
             percent = int(amount / total_expense * 100) if total_expense else 0
-
             text += f"{cat} — {amount} ₽ ({percent}%)\n"
 
             contributors = []
@@ -909,8 +918,6 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
     text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
 
-    DAY_WIDTH = 6  # 🔥 магия ровности
-
     for h in habits:
         hid, name, days, h_type, time, task_type, reminder = h
 
@@ -928,40 +935,58 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             logs = get_habit_logs(hid, uid)
             user_logs[uid] = {l[0]: l[1] for l in logs}
 
-        label_parts = []
-        bar_parts = []
+        # =========================
+        # 🔥 НОВАЯ ВЕРСТКА
+        # =========================
 
-        for d in days_list:
-            key = today + "_" + d
+        if h_type == "personal":
+            # --- ЛИЧНЫЕ ---
+            labels_line = ""
+            bar_line = ""
 
-            block = ""
+            for d in days_list:
+                key = today + "_" + d
 
-            for uid in active_users:
-                log_map = user_logs.get(uid, {})
+                log_map = user_logs.get(c.from_user.id, {})
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        block += get_user_color(uid) or "🟩"
+                        block = get_user_color(c.from_user.id)
                     elif log_map[key] == "skip":
-                        block += "🟥"
+                        block = "🟥"
                 else:
-                    block += "⬜"
+                    block = "⬜"
 
-            # 🔥 ЛИЧНЫЕ — 1 квадрат
-            if h_type == "personal":
-                block = block[:1]
+                labels_line += f"{d} "
+                bar_line += f"{block} "
 
-            # 🔥 центрируем внутри фикс ширины
-            label = d.center(DAY_WIDTH)
-            block = block.center(DAY_WIDTH)
+        else:
+            # --- СЕМЕЙНЫЕ (СТОЛБЦЫ) ---
+            labels_line = ""
+            rows = [""] * len(active_users)
 
-            label_parts.append(label)
-            bar_parts.append(block)
+            for d in days_list:
+                labels_line += f"{d} "
 
-        labels_line = " ".join(label_parts)
-        bar_line = " ".join(bar_parts)
+                for i, uid in enumerate(active_users):
+                    key = today + "_" + d
+                    log_map = user_logs.get(uid, {})
 
-        # вчера
+                    if key in log_map:
+                        if log_map[key] == "done":
+                            block = get_user_color(uid)
+                        elif log_map[key] == "skip":
+                            block = "🟥"
+                    else:
+                        block = "⬜"
+
+                    rows[i] += f"{block} "
+
+            bar_line = "\n".join(rows)
+
+        # =========================
+        # вчера скрытие
+        # =========================
         yesterday_done = True
         for d in days_list:
             key = yesterday + "_" + d
@@ -986,8 +1011,8 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{labels_line}</code>\n"
-            f"<code>{bar_line}</code>\n"
+            f"<code>{labels_line.strip()}</code>\n"
+            f"<code>{bar_line.strip()}</code>\n"
             f"────────────\n"
         )
 
@@ -1229,9 +1254,10 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
         days_list = days.split(",")
 
-        # 🔥 собираем логи всех пользователей
+        active_users = [c.from_user.id] if h_type == "personal" else users
+
         user_logs = {}
-        for uid in users:
+        for uid in active_users:
             logs = get_habit_logs(hid, uid)
 
             log_map = {}
@@ -1244,34 +1270,51 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
             user_logs[uid] = log_map
 
-        # 🔥 строим бар
-        day_blocks = []
-        day_labels = []
+        # =========================
+        # НОВАЯ ВЕРСТКА
+        # =========================
 
-        for d in days_list:
-            key = today + "_" + d
+        if h_type == "personal":
+            labels_line = ""
+            bar_line = ""
 
-            block = ""
-            for uid in users:
-                log_map = user_logs.get(uid, {})
+            for d in days_list:
+                key = today + "_" + d
+                log_map = user_logs.get(c.from_user.id, {})
 
                 if key in log_map:
                     if log_map[key] == "done":
-                        color = get_user_color(uid)
-                        block += color if color else "🟩"
+                        block = get_user_color(c.from_user.id)
                     elif log_map[key] == "skip":
-                        block += "🟥"
+                        block = "🟥"
                 else:
-                    block += "⬜"
+                    block = "⬜"
 
-            width = len(block)
-            label = d.center(width)
+                labels_line += f"{d} "
+                bar_line += f"{block} "
 
-            day_labels.append(label)
-            day_blocks.append(block)
+        else:
+            labels_line = ""
+            rows = [""] * len(active_users)
 
-        labels_line = " ".join(day_labels)
-        bar_line = " ".join(day_blocks)
+            for d in days_list:
+                labels_line += f"{d} "
+
+                for i, uid in enumerate(active_users):
+                    key = today + "_" + d
+                    log_map = user_logs.get(uid, {})
+
+                    if key in log_map:
+                        if log_map[key] == "done":
+                            block = get_user_color(uid)
+                        elif log_map[key] == "skip":
+                            block = "🟥"
+                    else:
+                        block = "⬜"
+
+                    rows[i] += f"{block} "
+
+            bar_line = "\n".join(rows)
 
         title = name
         if time:
@@ -1279,8 +1322,8 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{labels_line}</code>\n"
-            f"<code>{bar_line}</code>\n"
+            f"<code>{labels_line.strip()}</code>\n"
+            f"<code>{bar_line.strip()}</code>\n"
             f"────────────\n"
         )
 

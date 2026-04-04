@@ -383,9 +383,21 @@ def join_family(user_id, family_id, password):
     if not res or res[1] != password:
         return False, None
 
+    # 🔥 не дублируем участника
     cur.execute(
-        "INSERT INTO family_members VALUES (?, ?)",
+        "SELECT 1 FROM family_members WHERE user_id=? AND family_id=?",
         (user_id, family_id)
+    )
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO family_members VALUES (?, ?)",
+            (user_id, family_id)
+        )
+
+    # 🔥 ВАЖНО: фикс связки
+    cur.execute(
+        "UPDATE users SET family_id=? WHERE id=?",
+        (family_id, user_id)
     )
 
     conn.commit()
@@ -408,6 +420,13 @@ def leave_family(user_id):
         "DELETE FROM family_members WHERE user_id=?",
         (user_id,)
     )
+
+    # 🔥 ВАЖНО — убираем связь
+    cur.execute(
+        "UPDATE users SET family_id=NULL WHERE id=?",
+        (user_id,)
+    )
+
     conn.commit()
 
 
@@ -472,6 +491,6 @@ def get_family_id(user_id):
 ensure_family_column()   
 
 def get_family_name(family_id):
-    cur.execute("SELECT name FROM families WHERE id=?", (family_id,))
+    cur.execute("SELECT name FROM families WHERE family_id=?", (family_id,))
     row = cur.fetchone()
     return row[0] if row else "Без названия"
