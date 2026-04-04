@@ -503,3 +503,18 @@ def get_family_name(family_id):
     cur.execute("SELECT name FROM families WHERE family_id=?", (family_id,))
     row = cur.fetchone()
     return row[0] if row else "Без названия"
+    
+def is_family_owner(user_id, family_id):
+    cur.execute("""
+        SELECT user_id FROM family_members
+        WHERE family_id=?
+        ORDER BY rowid ASC
+        LIMIT 1
+    """, (family_id,))
+    res = cur.fetchone()
+    return res and res[0] == user_id
+
+
+def rename_family(family_id, new_name):
+    cur.execute("UPDATE families SET name=? WHERE family_id=?", (new_name, family_id))
+    conn.commit()    

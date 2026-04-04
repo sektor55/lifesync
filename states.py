@@ -21,3 +21,9 @@ class Family(StatesGroup):
 class AddIncome(StatesGroup):
     sum = State()
     custom = State()    
+
+class StartStates(StatesGroup):
+    name = State()
+    timezone = State()
+    gender = State()
+    color = State()    

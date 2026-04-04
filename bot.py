@@ -410,7 +410,12 @@ async def stats(c: CallbackQuery):
 
             if len(contributors) > 1:
                 for name, val in contributors:
-                    text += f"  👤{name} — {val} ₽\n"
+                    profile = get_user_profile(uid)
+                    gender = profile[3] if profile else "male"
+
+                    emoji = "👤" if gender != "female" else "👩"
+
+                    text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
@@ -643,6 +648,10 @@ async def toggle_days(c: CallbackQuery, state: FSMContext):
         else:
             days.append(d)
 
+    # 🔥 ВАЖНО — СОРТИРОВКА
+    order = {day: i for i, day in enumerate(DAYS)}
+    days = sorted(days, key=lambda x: order[x])
+
     await state.update_data(days=days)
 
     await c.message.edit_reply_markup(
@@ -862,7 +871,8 @@ async def render_habits(user_id):
     for h in habits:
         hid, name, days, h_type, time, task_type, reminder = h
 
-        days_list = days.split(",")
+        order = {day: i for i, day in enumerate(DAYS)}
+        days_list = sorted(days.split(","), key=lambda x: order[x])
         logs = get_habit_logs(hid, user_id)
 
         log_map = {}
@@ -1068,36 +1078,64 @@ async def open_habit(c: CallbackQuery):
 def get_streak(habit_id, user_id):
     from datetime import datetime, timedelta
 
-    logs = get_habit_logs(habit_id, user_id)
+    # получаем привычку
+    habits = get_habits(user_id)
+    habit = None
 
-    if not logs:
+    for h in habits:
+        if h[0] == habit_id:
+            habit = h
+            break
+
+    if not habit:
         return 0
 
-    log_map = {l[0]: l[1] for l in logs}
+    hid, name, days, h_type, time, task_type, reminder = habit
 
-    today = datetime.now()
+    days_list = days.split(",")
+
+    # 🔥 если разовая — стрик не считаем
+    if task_type == "once":
+        return 0
+
+    users = [user_id]
+
+    if h_type == "family":
+        users = get_family_members(user_id)
+
+    # собираем все логи
+    all_logs = {}
+    for uid in users:
+        logs = get_habit_logs(habit_id, uid)
+        all_logs[uid] = {l[0]: l[1] for l in logs}
+
     streak = 0
+    today = datetime.now()
 
     while True:
-        week_ok = True
+        day = today - timedelta(days=streak)
 
-        for i in range(7):
-            day = today - timedelta(days=i + streak * 7)
-            day_str = day.strftime("%Y-%m-%d")
+        weekday_map = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+        day_name = weekday_map[day.weekday()]
 
-            # проверяем есть ли хоть одна запись "не done"
-            found = False
+        # если в этот день привычка не запланирована — просто пропускаем
+        if day_name not in days_list:
+            streak += 1
+            continue
 
-            for key in log_map:
-                if key.startswith(day_str):
-                    if log_map[key] != "done":
-                        week_ok = False
-                    found = True
+        day_str = day.strftime("%Y-%m-%d")
 
-            if not found:
-                week_ok = False
+        day_ok = True
 
-        if week_ok:
+        for uid in users:
+            key = f"{day_str}_{day_name}"
+            log_map = all_logs.get(uid, {})
+
+            if key not in log_map or log_map[key] != "done":
+                day_ok = False
+                break
+
+        if day_ok:
             streak += 1
         else:
             break
@@ -1251,7 +1289,8 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
         if mode == "family" and h_type != "family":
             continue
 
-        days_list = days.split(",")
+        order = {day: i for i, day in enumerate(DAYS)}
+        days_list = sorted(days.split(","), key=lambda x: order[x])
 
         active_users = [c.from_user.id] if h_type == "personal" else users
 
@@ -1431,7 +1470,7 @@ from datetime import datetime, timedelta
 from database import cur
 
 async def reminder_worker(bot: Bot):
-    TIME_FIX = -180  # поправка сервера (в секундах)
+    TIME_FIX = -60  # поправка сервера (в секундах)
 
     while True:
         try:
@@ -1501,30 +1540,30 @@ async def set_timezone(c: CallbackQuery, state: FSMContext):
     await c.answer()
 
     tz = int(c.data.split("_")[1])
-
     data = await state.get_data()
 
-    # 🔥 ЕСЛИ это старт
+    # =========================
+    # 🔥 СТАРТ
+    # =========================
     if "name" in data:
         await state.update_data(timezone=tz)
 
-        await state.set_state(StartStates.color)
+        # 👉 теперь НЕ color, а gender
+        await state.set_state(StartStates.gender)
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
-                InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
-                InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
-                InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
-            ]
+            [InlineKeyboardButton(text="👤", callback_data="gender_male")],
+            [InlineKeyboardButton(text="👩", callback_data="gender_female")]
         ])
 
         await c.message.edit_text(
-            "🎨 Выбери цвет привычек:",
+            "Выбери пол:",
             reply_markup=kb
         )
 
-    # 🔥 ЕСЛИ это настройки
+    # =========================
+    # 🔥 НАСТРОЙКИ
+    # =========================
     else:
         cur.execute(
             "UPDATE users SET timezone=? WHERE id=?",
@@ -1533,6 +1572,31 @@ async def set_timezone(c: CallbackQuery, state: FSMContext):
         conn.commit()
 
         await c.message.edit_text("✅ Часовой пояс обновлён")
+        
+@dp.callback_query(F.data.startswith("gender_"))
+async def set_gender(c: CallbackQuery, state: FSMContext):
+    await c.answer()
+
+    gender = c.data.split("_")[1]
+
+    await state.update_data(gender=gender)
+
+    # 👉 теперь уже color
+    await state.set_state(StartStates.color)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟩", callback_data="color_🟩"),
+            InlineKeyboardButton(text="🟦", callback_data="color_🟦"),
+            InlineKeyboardButton(text="🟪", callback_data="color_🟪"),
+            InlineKeyboardButton(text="🟧", callback_data="color_🟧"),
+        ]
+    ])
+
+    await c.message.edit_text(
+        "🎨 Выбери цвет привычек:",
+        reply_markup=kb
+    )        
 
 @dp.message(F.text == "⚙️ Настройки")
 async def settings_menu(m: Message):
@@ -1544,6 +1608,7 @@ async def settings_menu(m: Message):
             ],
             [
                 InlineKeyboardButton(text="🎨 Цвет", callback_data="set_color"),
+                InlineKeyboardButton(text="✏️ Имя", callback_data="set_name"),
             ]
         ])
     )
@@ -1699,9 +1764,9 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
     if "name" in data:
         cur.execute("""
             UPDATE users
-            SET name=?, timezone=?, color=?
+            SET name=?, timezone=?, color=?, gender=?
             WHERE id=?
-        """, (data["name"], data["timezone"], color, c.from_user.id))
+        """, (data["name"], data["timezone"], color, data["gender"], c.from_user.id))
         conn.commit()
 
         await state.clear()
@@ -1714,6 +1779,52 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
 
         await c.message.edit_text("✅ Цвет сохранён")  
     
+    
+async def weekly_reset_worker():
+    from datetime import datetime, timedelta
+    import asyncio
+
+    last_reset = {}
+
+    while True:
+        try:
+            cur.execute("""
+                SELECT DISTINCT user_id, tz
+                FROM habits
+            """)
+            users = cur.fetchall()
+
+            for user_id, tz in users:
+                try:
+                    user_now = datetime.utcnow() + timedelta(hours=tz)
+
+                    week_key = f"{user_id}_{user_now.strftime('%Y-%W')}"
+
+                    if (
+                        user_now.weekday() == 0
+                        and user_now.hour == 0
+                        and user_now.minute == 0
+                    ):
+                        if last_reset.get(user_id) != week_key:
+
+                            print(f"✅ RESET for user {user_id}")
+
+                            # 🔥 ВОТ ЧТО НУЖНО
+                            cur.execute("""
+                                DELETE FROM habit_logs
+                                WHERE user_id=?
+                            """, (user_id,))
+                            conn.commit()
+
+                            last_reset[user_id] = week_key
+
+                except Exception as e:
+                    print("USER RESET ERROR:", e)
+
+        except Exception as e:
+            print("WEEKLY WORKER ERROR:", e)
+
+        await asyncio.sleep(30)   
     
 # =========================
 # СЕМЬЯ
@@ -1740,15 +1851,46 @@ async def family_menu(m: Message):
         await m.answer("Ты не в семье", reply_markup=kb)
     else:
         name = get_family_name(family_id)
+        members = get_family_members(m.from_user.id)
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[
+        members_text = ""
+        for uid in members:
+            profile = get_user_profile(uid)
+            uname = profile[0] if profile else f"id:{uid}"
+            members_text += f"• <b>{uname}</b>\n"
+
+        kb = [
             [InlineKeyboardButton(text="📎 Мой код", callback_data="family_code")],
             [InlineKeyboardButton(text="🚪 Выйти", callback_data="leave_family")]
-        ])
+        ]
 
-        await m.answer(f"Ты в семье: <b>{name}</b>", reply_markup=kb, parse_mode="HTML")
+        if is_family_owner(m.from_user.id, family_id):
+            kb.insert(0, [InlineKeyboardButton(text="✏️ Переименовать", callback_data="rename_family")])
 
- 
+        await m.answer(
+            f"Ты в семье: <b>{name}</b>\n\n"
+            f"Участники:\n{members_text}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode="HTML"
+        )
+
+InlineKeyboardButton(text="✏️ Имя", callback_data="set_name")
+
+
+class SettingsStates(StatesGroup):
+    change_name = State()
+    
+@dp.callback_query(F.data == "set_name")
+async def change_name(c: CallbackQuery, state: FSMContext):
+    await state.set_state(SettingsStates.change_name)
+    await c.message.answer("Введи новое имя")
+
+
+@dp.message(SettingsStates.change_name)
+async def set_name_settings(m: Message, state: FSMContext):
+    set_user_profile(m.from_user.id, m.text, get_user_color(m.from_user.id))
+    await state.clear()
+    await m.answer("✅ Имя обновлено")
 
 # -------- СОЗДАНИЕ --------
 
@@ -1786,6 +1928,29 @@ async def create_family_password(m: Message, state: FSMContext):
         [InlineKeyboardButton(text="📎 Мой код", callback_data="family_code")],
         [InlineKeyboardButton(text="🚪 Выйти", callback_data="leave_family")]
     ]))
+    
+@dp.callback_query(F.data == "rename_family")
+async def rename_family_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(FamilyStates.create_name)
+    await c.message.answer("Введи новое название семьи")
+
+
+@dp.message(FamilyStates.create_name)
+async def rename_family_name(m: Message, state: FSMContext):
+    family_id = get_family_id(m.from_user.id)
+
+    if not is_family_owner(m.from_user.id, family_id):
+        await m.answer("❌ Только создатель может менять название")
+        return
+
+    cur.execute(
+        "UPDATE families SET name=? WHERE id=?",
+        (m.text, family_id)
+    )
+    conn.commit()
+
+    await state.clear()
+    await m.answer("✅ Название обновлено")    
 
 
 # -------- ВСТУПЛЕНИЕ --------
@@ -1864,6 +2029,7 @@ async def start(m: Message, state: FSMContext):
 
 async def main():
     asyncio.create_task(reminder_worker(bot))
+    asyncio.create_task(weekly_reset_worker())
     await dp.start_polling(bot)
 
 
