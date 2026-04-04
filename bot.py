@@ -936,17 +936,17 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
             user_logs[uid] = {l[0]: l[1] for l in logs}
 
         # =========================
-        # 🔥 НОВАЯ ВЕРСТКА
+        # 🔥 РОВНАЯ ВЕРСТКА
         # =========================
 
+        # подпись (1 пробел между днями)
+        labels_line = " ".join(days_list)
+
         if h_type == "personal":
-            # --- ЛИЧНЫЕ ---
-            labels_line = ""
             bar_line = ""
 
             for d in days_list:
                 key = today + "_" + d
-
                 log_map = user_logs.get(c.from_user.id, {})
 
                 if key in log_map:
@@ -957,20 +957,17 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                 else:
                     block = "⬜"
 
-                labels_line += f"{d} "
-                bar_line += f"{block} "
+                bar_line += block  # ❗ БЕЗ ПРОБЕЛОВ
 
         else:
-            # --- СЕМЕЙНЫЕ (СТОЛБЦЫ) ---
-            labels_line = ""
-            rows = [""] * len(active_users)
+            rows = []
 
-            for d in days_list:
-                labels_line += f"{d} "
+            for uid in active_users:
+                row = ""
+                log_map = user_logs.get(uid, {})
 
-                for i, uid in enumerate(active_users):
+                for d in days_list:
                     key = today + "_" + d
-                    log_map = user_logs.get(uid, {})
 
                     if key in log_map:
                         if log_map[key] == "done":
@@ -980,7 +977,9 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
                     else:
                         block = "⬜"
 
-                    rows[i] += f"{block} "
+                    row += block  # ❗ БЕЗ ПРОБЕЛОВ
+
+                rows.append(row)
 
             bar_line = "\n".join(rows)
 
@@ -1011,8 +1010,8 @@ async def show_my_habits(c: CallbackQuery, mode="personal"):
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{labels_line.strip()}</code>\n"
-            f"<code>{bar_line.strip()}</code>\n"
+            f"<code>{labels_line}</code>\n"
+            f"<code>{bar_line}</code>\n"
             f"────────────\n"
         )
 
@@ -1271,11 +1270,12 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
             user_logs[uid] = log_map
 
         # =========================
-        # НОВАЯ ВЕРСТКА
+        # 🔥 РОВНАЯ ВЕРСТКА
         # =========================
 
+        labels_line = " ".join(days_list)
+
         if h_type == "personal":
-            labels_line = ""
             bar_line = ""
 
             for d in days_list:
@@ -1290,19 +1290,17 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
                 else:
                     block = "⬜"
 
-                labels_line += f"{d} "
-                bar_line += f"{block} "
+                bar_line += block  # ❗ БЕЗ ПРОБЕЛОВ
 
         else:
-            labels_line = ""
-            rows = [""] * len(active_users)
+            rows = []
 
-            for d in days_list:
-                labels_line += f"{d} "
+            for uid in active_users:
+                row = ""
+                log_map = user_logs.get(uid, {})
 
-                for i, uid in enumerate(active_users):
+                for d in days_list:
                     key = today + "_" + d
-                    log_map = user_logs.get(uid, {})
 
                     if key in log_map:
                         if log_map[key] == "done":
@@ -1312,7 +1310,9 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
                     else:
                         block = "⬜"
 
-                    rows[i] += f"{block} "
+                    row += block  # ❗ БЕЗ ПРОБЕЛОВ
+
+                rows.append(row)
 
             bar_line = "\n".join(rows)
 
@@ -1322,8 +1322,8 @@ async def show_progress(c: CallbackQuery, mode="personal", period="week"):
 
         text += (
             f"🔹 <b><i>{title}</i></b>\n"
-            f"<code>{labels_line.strip()}</code>\n"
-            f"<code>{bar_line.strip()}</code>\n"
+            f"<code>{labels_line}</code>\n"
+            f"<code>{bar_line}</code>\n"
             f"────────────\n"
         )
 

@@ -383,7 +383,7 @@ def join_family(user_id, family_id, password):
     if not res or res[1] != password:
         return False, None
 
-    # 🔥 не дублируем участника
+    # участник
     cur.execute(
         "SELECT 1 FROM family_members WHERE user_id=? AND family_id=?",
         (user_id, family_id)
@@ -394,11 +394,20 @@ def join_family(user_id, family_id, password):
             (user_id, family_id)
         )
 
-    # 🔥 ВАЖНО: фикс связки
+    # связь
     cur.execute(
         "UPDATE users SET family_id=? WHERE id=?",
         (family_id, user_id)
     )
+
+    # =========================
+    # 🔥 ВАЖНО: подтягиваем семейные привычки
+    # =========================
+    cur.execute("""
+        UPDATE habits
+        SET family_id=?
+        WHERE type='family' AND family_id IS NULL
+    """, (family_id,))
 
     conn.commit()
     return True, res[0]
