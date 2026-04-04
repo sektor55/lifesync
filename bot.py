@@ -1757,9 +1757,9 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
     if "name" in data:
         cur.execute("""
             UPDATE users
-            SET name=?, timezone=?, color=?, gender=?
+            SET name=?, timezone=?, color=?
             WHERE id=?
-        """, (data["name"], data["timezone"], color, data["gender"], c.from_user.id))
+        """, (data["name"], data["timezone"], color, c.from_user.id))
         conn.commit()
 
         await state.clear()

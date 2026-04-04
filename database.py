@@ -41,7 +41,11 @@ def init_habits_update():
     try:
         cur.execute("ALTER TABLE users ADD COLUMN family_id INTEGER")
     except:
-        pass            
+        pass 
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
+    except:
+        pass        
 
     # ===== USERS =====
     cur.execute("""
