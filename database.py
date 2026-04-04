@@ -522,3 +522,7 @@ def is_family_owner(user_id, family_id):
 def rename_family(family_id, new_name):
     cur.execute("UPDATE families SET name=? WHERE family_id=?", (new_name, family_id))
     conn.commit()    
+    
+def set_gender(user_id, gender):
+    cur.execute("UPDATE users SET gender=? WHERE id=?", (gender, user_id))
+    conn.commit()    

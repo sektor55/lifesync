@@ -414,7 +414,7 @@ async def stats(c: CallbackQuery):
                     if val > 0:
                         profile = get_user_profile(uid2)
                         name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[3] if profile and len(profile) > 3 else "male"
+                        gender = profile[4] if profile and len(profile) > 4 else "male"
 
                         emoji = "👤" if gender == "male" else "👩"
 
@@ -445,7 +445,7 @@ async def stats(c: CallbackQuery):
                     if val > 0:
                         profile = get_user_profile(uid2)
                         name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[3] if profile and len(profile) > 3 else "male"
+                        gender = profile[4] if profile and len(profile) > 4 else "male"
 
                         emoji = "👤" if gender == "male" else "👩"
 
@@ -1087,7 +1087,7 @@ async def open_habit(c: CallbackQuery):
     await c.message.edit_text("Выбери действие:", reply_markup=kb)
     
 def get_streak(habit_id, user_id):
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     # получаем привычку
     habits = get_habits(user_id)
@@ -1103,9 +1103,7 @@ def get_streak(habit_id, user_id):
 
     hid, name, days, h_type, time, task_type, reminder = habit
 
-    days_list = days.split(",")
-
-    # 🔥 если разовая — стрик не считаем
+    # ❗ разовая — без стрика
     if task_type == "once":
         return 0
 
@@ -1114,42 +1112,44 @@ def get_streak(habit_id, user_id):
     if h_type == "family":
         users = get_family_members(user_id)
 
-    # собираем все логи
+    # собираем логи
     all_logs = {}
     for uid in users:
         logs = get_habit_logs(habit_id, uid)
         all_logs[uid] = {l[0]: l[1] for l in logs}
 
+    # 🔥 считаем ВСЕ выполненные дни подряд (по факту выполнения)
+    done_days = []
+
+    for uid in users:
+        for key, status in all_logs[uid].items():
+            if status == "done":
+                date_str = key.split("_")[0]
+                done_days.append(date_str)
+
+    if not done_days:
+        return 0
+
+    # уникальные даты
+    done_days = sorted(list(set(done_days)))
+
     streak = 0
-    today = datetime.now()
+    prev_date = None
 
-    while True:
-        day = today - timedelta(days=streak)
+    for d in done_days:
+        date = datetime.strptime(d, "%Y-%m-%d")
 
-        weekday_map = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
-        day_name = weekday_map[day.weekday()]
-
-        # если в этот день привычка не запланирована — просто пропускаем
-        if day_name not in days_list:
-            streak += 1
-            continue
-
-        day_str = day.strftime("%Y-%m-%d")
-
-        day_ok = True
-
-        for uid in users:
-            key = f"{day_str}_{day_name}"
-            log_map = all_logs.get(uid, {})
-
-            if key not in log_map or log_map[key] != "done":
-                day_ok = False
-                break
-
-        if day_ok:
-            streak += 1
+        if not prev_date:
+            streak = 1
         else:
-            break
+            diff = (date - prev_date).days
+
+            if diff == 1:
+                streak += 1
+            else:
+                streak = 1
+
+        prev_date = date
 
     return streak    
     
@@ -2018,9 +2018,22 @@ async def leave_family_handler(c: CallbackQuery):
 
 @dp.message(CommandStart())
 async def start(m: Message, state: FSMContext):
-    add_user(m.from_user.id, m.from_user.first_name)  # 🔥 ВАЖНО
+    user = get_user_profile(m.from_user.id)
+
+    # 🔥 ЕСЛИ УЖЕ ЕСТЬ — ПРОСТО В МЕНЮ
+    if user and user[0]:
+        await state.clear()
+        await m.answer(
+            "🏠 Главное меню",
+            reply_markup=keyboards.get_main_menu()
+        )
+        return
+
+    # 🔥 ЕСЛИ НОВЫЙ — ВСЁ КАК БЫЛО
+    add_user(m.from_user.id, m.from_user.first_name)  # НЕ ТРОГАЕМ
 
     await state.set_state(StartStates.name)
+
     await m.answer(
         "👋 Добро пожаловать!\n\n"
         "Этот бот поможет тебе:\n"
