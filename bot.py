@@ -409,13 +409,16 @@ async def stats(c: CallbackQuery):
                     contributors.append((name, val))
 
             if len(contributors) > 1:
-                for name, val in contributors:
-                    profile = get_user_profile(uid)
-                    gender = profile[3] if profile else "male"
+                for uid2 in users:
+                    val = user_income_map.get(uid2, {}).get(cat, 0)
+                    if val > 0:
+                        profile = get_user_profile(uid2)
+                        name = profile[0] if profile and profile[0] else f"id:{uid2}"
+                        gender = profile[3] if profile and len(profile) > 3 else "male"
 
-                    emoji = "👤" if gender != "female" else "👩"
+                        emoji = "👤" if gender == "male" else "👩"
 
-                    text += f"  {emoji}{name} — {val} ₽\n"
+                        text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
@@ -437,8 +440,16 @@ async def stats(c: CallbackQuery):
                     contributors.append((name, val))
 
             if len(contributors) > 1:
-                for name, val in contributors:
-                    text += f"  👤{name} — {val} ₽\n"
+                for uid2 in users:
+                    val = user_expense_map.get(uid2, {}).get(cat, 0)
+                    if val > 0:
+                        profile = get_user_profile(uid2)
+                        name = profile[0] if profile and profile[0] else f"id:{uid2}"
+                        gender = profile[3] if profile and len(profile) > 3 else "male"
+
+                        emoji = "👤" if gender == "male" else "👩"
+
+                        text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
@@ -490,7 +501,7 @@ async def graph_expense(c: CallbackQuery):
         wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
     )
 
-    plt.title("💸 Расходы (вся семья)", fontsize=20, color="white")
+    plt.title("Расходы (вся семья)", fontsize=20, color="white")
 
     file_name = "expense.png"
     plt.savefig(file_name, facecolor="#1e1e2f")
@@ -541,7 +552,7 @@ async def graph_income(c: CallbackQuery):
         wedgeprops={"edgecolor": "#1e1e2f", "linewidth": 2}
     )
 
-    plt.title("💰 Доходы (вся семья)", fontsize=20, color="white")
+    plt.title("Доходы (вся семья)", fontsize=20, color="white")
 
     file_name = "income.png"
     plt.savefig(file_name, facecolor="#1e1e2f")
