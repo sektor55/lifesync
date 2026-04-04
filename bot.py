@@ -414,7 +414,7 @@ async def stats(c: CallbackQuery):
                     if val > 0:
                         profile = get_user_profile(uid2)
                         name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[4] if profile and len(profile) > 4 else "male"
+                        gender = profile[3] if profile and len(profile) > 3 else "male"
 
                         emoji = "👤" if gender == "male" else "👩"
 
@@ -445,7 +445,7 @@ async def stats(c: CallbackQuery):
                     if val > 0:
                         profile = get_user_profile(uid2)
                         name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[4] if profile and len(profile) > 4 else "male"
+                        gender = profile[3] if profile and len(profile) > 3 else "male"
 
                         emoji = "👤" if gender == "male" else "👩"
 
@@ -1087,12 +1087,9 @@ async def open_habit(c: CallbackQuery):
     await c.message.edit_text("Выбери действие:", reply_markup=kb)
     
 def get_streak(habit_id, user_id):
-    from datetime import datetime
-
-    # получаем привычку
     habits = get_habits(user_id)
-    habit = None
 
+    habit = None
     for h in habits:
         if h[0] == habit_id:
             habit = h
@@ -1103,7 +1100,6 @@ def get_streak(habit_id, user_id):
 
     hid, name, days, h_type, time, task_type, reminder = habit
 
-    # ❗ разовая — без стрика
     if task_type == "once":
         return 0
 
@@ -1112,46 +1108,20 @@ def get_streak(habit_id, user_id):
     if h_type == "family":
         users = get_family_members(user_id)
 
-    # собираем логи
-    all_logs = {}
+    total_done = 0
+
     for uid in users:
         logs = get_habit_logs(habit_id, uid)
-        all_logs[uid] = {l[0]: l[1] for l in logs}
 
-    # 🔥 считаем ВСЕ выполненные дни подряд (по факту выполнения)
-    done_days = []
-
-    for uid in users:
-        for key, status in all_logs[uid].items():
+        for log_date, status in logs:
             if status == "done":
-                date_str = key.split("_")[0]
-                done_days.append(date_str)
+                total_done += 1
 
-    if not done_days:
-        return 0
+    # 🔥 для семейной — делим на участников
+    if h_type == "family" and users:
+        total_done = total_done // len(users)
 
-    # уникальные даты
-    done_days = sorted(list(set(done_days)))
-
-    streak = 0
-    prev_date = None
-
-    for d in done_days:
-        date = datetime.strptime(d, "%Y-%m-%d")
-
-        if not prev_date:
-            streak = 1
-        else:
-            diff = (date - prev_date).days
-
-            if diff == 1:
-                streak += 1
-            else:
-                streak = 1
-
-        prev_date = date
-
-    return streak    
+    return total_done    
     
 @dp.callback_query(F.data.startswith("choose_"))
 async def choose_action(c: CallbackQuery):
