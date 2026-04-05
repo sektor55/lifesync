@@ -445,7 +445,7 @@ async def toggle_fin_handler(c: CallbackQuery):
     await c.answer("Обновлено")
     await fin_menu(c)
 
-@dp.callback_query(F.data == "back_fin"))    
+@dp.callback_query(F.data == "back_fin")   
 
 @dp.callback_query(F.data == "savings_menu")
 async def open_savings(c: CallbackQuery):
