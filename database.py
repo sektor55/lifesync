@@ -94,6 +94,14 @@ def init_users_update():
 
 init_users_update()
 
+def add_savings_column():
+    cur.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cur.fetchall()]
+
+    if "savings" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
+        conn.commit()
+      
 
 cur.execute("""CREATE TABLE IF NOT EXISTS transactions(
 user_id INTEGER,
@@ -142,6 +150,12 @@ conn.commit()
 
 def add_transaction(uid, amount, t, cat):
     cur.execute("INSERT INTO transactions VALUES(?,?,?,?)",(uid,amount,t,cat))
+
+    # 🔥 АВТОКОПИЛКА 10%
+    if t == "income":
+        save_amount = int(amount * 0.1)
+        add_savings(uid, save_amount)
+
     conn.commit()
 
 
@@ -474,7 +488,7 @@ def set_user_profile(user_id, name, color):
 
 def get_user_profile(user_id):
     cur.execute("""
-        SELECT name, timezone, color FROM users WHERE id=?
+        SELECT name, timezone, color, gender FROM users WHERE id=?
     """, (user_id,))
     return cur.fetchone()    
     
@@ -527,8 +541,10 @@ def set_gender(user_id, gender):
     cur.execute("UPDATE users SET gender=? WHERE id=?", (gender, user_id))
     conn.commit()    
     
+
+
 # =========================
-# 💰 SAVINGS (НОВОЕ)
+# 💰 SAVINGS (НОВАЯ СИСТЕМА)
 # =========================
 
 cur.execute("""
@@ -544,7 +560,6 @@ conn.commit()
 def add_savings(user_id, amount):
     users = get_family_members(user_id)
 
-    # если в семье — делаем ОБЩЕЕ (записываем на всех)
     for uid in users:
         cur.execute(
             "INSERT INTO savings_logs VALUES(?,?,?)",
@@ -617,4 +632,4 @@ def get_savings_percent(user_id):
     if income == 0:
         return 0
 
-    return int((savings / income) * 100)    
+    return int((savings / income) * 100)
