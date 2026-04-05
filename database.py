@@ -526,3 +526,95 @@ def rename_family(family_id, new_name):
 def set_gender(user_id, gender):
     cur.execute("UPDATE users SET gender=? WHERE id=?", (gender, user_id))
     conn.commit()    
+    
+# =========================
+# 💰 SAVINGS (НОВОЕ)
+# =========================
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS savings_logs(
+    user_id INTEGER,
+    amount INTEGER,
+    type TEXT  -- add / withdraw
+)
+""")
+conn.commit()
+
+
+def add_savings(user_id, amount):
+    users = get_family_members(user_id)
+
+    # если в семье — делаем ОБЩЕЕ (записываем на всех)
+    for uid in users:
+        cur.execute(
+            "INSERT INTO savings_logs VALUES(?,?,?)",
+            (uid, amount, "add")
+        )
+
+    conn.commit()
+
+
+def withdraw_savings(user_id, amount):
+    users = get_family_members(user_id)
+
+    balance = get_savings_balance(user_id)
+
+    if amount > balance:
+        return False
+
+    for uid in users:
+        cur.execute(
+            "INSERT INTO savings_logs VALUES(?,?,?)",
+            (uid, amount, "withdraw")
+        )
+
+    conn.commit()
+    return True
+
+
+def get_savings_balance(user_id):
+    users = get_family_members(user_id)
+
+    cur.execute(f"""
+        SELECT type, SUM(amount)
+        FROM savings_logs
+        WHERE user_id IN ({",".join("?"*len(users))})
+        GROUP BY type
+    """, users)
+
+    data = cur.fetchall()
+
+    total_add = 0
+    total_withdraw = 0
+
+    for t, amount in data:
+        if t == "add":
+            total_add = amount or 0
+        elif t == "withdraw":
+            total_withdraw = amount or 0
+
+    return total_add - total_withdraw
+
+
+def get_total_income(user_id):
+    users = get_family_members(user_id)
+
+    cur.execute(f"""
+        SELECT SUM(amount)
+        FROM transactions
+        WHERE user_id IN ({",".join("?"*len(users))})
+        AND type='income'
+    """, users)
+
+    res = cur.fetchone()
+    return res[0] if res and res[0] else 0
+
+
+def get_savings_percent(user_id):
+    savings = get_savings_balance(user_id)
+    income = get_total_income(user_id)
+
+    if income == 0:
+        return 0
+
+    return int((savings / income) * 100)    
