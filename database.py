@@ -633,3 +633,64 @@ def get_savings_percent(user_id):
         return 0
 
     return int((savings / income) * 100)
+
+
+def fix_db():
+    # USERS
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN family_id TEXT")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN timezone INTEGER")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN name TEXT")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN color TEXT")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN shared_finance INTEGER DEFAULT 1")
+    except:
+        pass
+
+    # HABITS
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN reminder INTEGER")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN family_id TEXT")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE habits ADD COLUMN task_type TEXT")
+    except:
+        pass
+
+    conn.commit()
