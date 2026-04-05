@@ -283,7 +283,11 @@ class AddIncome(StatesGroup):
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
     await state.set_state(AddIncome.sum)
-    await c.message.answer("Введите сумму дохода")
+
+    await c.message.answer(
+        "Выбери категорию дохода:",
+        reply_markup=keyboards.income_categories()
+    )
 
 
 @dp.message(AddIncome.sum)
@@ -294,22 +298,11 @@ async def income_sum(m: Message, state: FSMContext):
         await m.answer("❌ Не нашел сумму")
         return
 
-    category = detect_income_category(m.text)
+    data = await state.get_data()
+    category = data.get("category", "Другое")
     user_id = m.from_user.id
 
-    # 🔥 ЕСЛИ НЕ ОПРЕДЕЛИЛАСЬ — ДАЕМ ВЫБОР
-    if not category:
-        await state.update_data(amount=amount)
-
-        await m.answer(
-            "💰 Выбери категорию дохода:",
-            reply_markup=keyboards.income_categories()
-        )
-        return
-
-    await state.update_data(amount=amount, category=category)
-
-    # ❗ ЕСЛИ ВЫКЛЮЧЕНО — ПРОСТО ДОХОД
+    # ❗ ЕСЛИ ФИНАНСЫ ВЫКЛЮЧЕНЫ
     if not is_fin_enabled(user_id):
         add_transaction(user_id, amount, "income", category)
 
@@ -321,9 +314,13 @@ async def income_sum(m: Message, state: FSMContext):
         )
         return
 
-    # 💰 ЛОГИКА ТЗ
+    # 💰 ЛОГИКА 10%
     savings_part = int(amount * 0.1)
-    SAVINGS_BUFFER[user_id] = savings_part
+    SAVINGS_BUFFER[user_id] = {
+        "amount": amount,
+        "category": category,
+        "save": savings_part
+    }
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -333,45 +330,105 @@ async def income_sum(m: Message, state: FSMContext):
     ])
 
     await m.answer(
-        f"💰 Доход: {amount:,} ₽\n\n"
-        f"📌 Платите себе первым:\n👉 {savings_part:,} ₽ (10%)",
+        f"💰 Доход: {amount:,} ₽ → {category}\n\n"
+        f"📌 Отложить 10%?\n👉 {savings_part:,} ₽",
         reply_markup=kb
     )
 
 @dp.callback_query(F.data == "save_income_part")
 async def save_income_part(c: CallbackQuery, state: FSMContext):
     user_id = c.from_user.id
-    data = await state.get_data()
+    data = SAVINGS_BUFFER.get(user_id)
+
+    if not data:
+        await c.answer("Ошибка")
+        return
+
+    amount = data["amount"]
+    category = data["category"]
+    save = data["save"]
+
+    # ✅ сохраняем правильно
+    add_savings(user_id, save)
+    add_transaction(user_id, amount - save, "income", category)
+
+    SAVINGS_BUFFER.pop(user_id, None)
+    await state.clear()
+
+    await c.message.answer(
+        f"✅ Доход: {amount - save:,} ₽ → {category}\n"
+        f"💰 В копилку: {save:,} ₽",
+        reply_markup=keyboards.budget_menu()
+    )
+
+
+@dp.callback_query(F.data == "subscription")
+async def subscription(c: CallbackQuery):
+    await c.message.answer(
+        "📦 Подписка\n\nВыбери функцию:",
+        reply_markup=keyboards.subscription_menu()
+    )
+    
+@dp.callback_query(F.data == "fin_menu")
+async def fin_menu(c: CallbackQuery):
+    user_id = c.from_user.id
+    enabled = is_fin_enabled(user_id)
+
+    status = "✅ Включено" if enabled else "❌ Выключено"
+    btn_text = "🔴 Выключить" if enabled else "🟢 Включить"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=btn_text, callback_data="toggle_fin")]
+    ])
+
+    await c.message.answer(
+        "💰 Финансовая система\n"
+        "«Самый богатый человек в Вавилоне»\n\n"
+        "1. Платите себе первым\n"
+        "2. Контролируйте расходы\n"
+        "3. Создавайте накопления\n"
+        "...\n\n"
+        f"Статус: {status}",
+        reply_markup=kb
+    )    
+
+@dp.callback_query(F.data == "skip_income_part")
+async def skip_income_part(c: CallbackQuery, state: FSMContext):
+    user_id = c.from_user.id
+    data = SAVINGS_BUFFER.get(user_id)
+
+    if not data:
+        await c.answer("Ошибка")
+        return
 
     amount = data["amount"]
     category = data["category"]
 
-    savings_part = SAVINGS_BUFFER.get(user_id, 0)
+    add_transaction(user_id, amount, "income", category)
 
-    if savings_part > 0:
-        add_savings(user_id, savings_part)
+    SAVINGS_BUFFER.pop(user_id, None)
+    await state.clear()
+
+    await c.message.answer(
+        f"✅ Доход добавлен: {amount:,} ₽ → {category}",
+        reply_markup=keyboards.budget_menu()
+    )
+
+
+@@dp.callback_query(F.data == "skip_income_part")
+async def skip_income_part(c: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    amount = data["amount"]
+    category = data["category"]
+    user_id = c.from_user.id
 
     add_transaction(user_id, amount, "income", category)
 
     await state.clear()
 
     await c.message.answer(
-        f"✅ Отложено: {savings_part:,} ₽",
-        reply_markup=keyboards.budget_menu()
-    )
-
-
-@dp.callback_query(F.data == "skip_income_part")
-async def skip_income_part(c: CallbackQuery, state: FSMContext):
-    user_id = c.from_user.id
-    data = await state.get_data()
-
-    add_transaction(user_id, data["amount"], "income", data["category"])
-
-    await state.clear()
-
-    await c.message.answer(
-        f"✅ Доход добавлен: {data['amount']:,} ₽",
+        f"✅ Доход добавлен: {amount:,} ₽",
         reply_markup=keyboards.budget_menu()
     )
     
@@ -610,43 +667,10 @@ async def stats(c: CallbackQuery):
 async def income_category(c: CallbackQuery, state: FSMContext):
     category = c.data.split("_")[2]
 
-    data = await state.get_data()
-    amount = data.get("amount")
+    await state.update_data(category=category)
+    await state.set_state(AddIncome.sum)
 
-    if not amount:
-        await c.message.answer("❌ Ошибка суммы")
-        return
-
-    user_id = c.from_user.id
-
-    # ❗ ЕСЛИ ФИНАНСЫ ВЫКЛЮЧЕНЫ
-    if not is_fin_enabled(user_id):
-        add_transaction(user_id, amount, "income", category)
-
-        await state.clear()
-
-        await c.message.answer(
-            f"✅ Доход добавлен: {amount:,} ₽ → {category}",
-            reply_markup=keyboards.budget_menu()
-        )
-        return
-
-    # 💰 ЛОГИКА ТЗ
-    savings_part = int(amount * 0.1)
-    SAVINGS_BUFFER[user_id] = savings_part
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💰 Отложить", callback_data="save_income_part"),
-            InlineKeyboardButton(text="❌ Пропустить", callback_data="skip_income_part")
-        ]
-    ])
-
-    await c.message.answer(
-        f"💰 Доход: {amount:,} ₽ → {category}\n\n"
-        f"📌 Отложить 10%?\n👉 {savings_part:,} ₽",
-        reply_markup=kb
-    )
+    await c.message.answer("Введи сумму дохода:")
 
 # =========================
 # 📉 ГРАФИК РАСХОДОВ
@@ -1939,7 +1963,7 @@ def get_stats_text(user_id):
 
         text += f"\n📈 Баланс: {balance} ₽"
         text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
-        text += "\n────────────\n\n"
+        text += "\n"
 
     avg_percent = int(total_percent / percent_count) if percent_count else 0
 

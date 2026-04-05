@@ -154,13 +154,10 @@ conn.commit()
 
 
 def add_transaction(uid, amount, t, cat):
-    cur.execute("INSERT INTO transactions VALUES(?,?,?,?)",(uid,amount,t,cat))
-
-    # 🔥 АВТОКОПИЛКА 10%
-    if t == "income":
-        save_amount = int(amount * 0.1)
-        add_savings(uid, save_amount)
-
+    cur.execute(
+        "INSERT INTO transactions VALUES(?,?,?,?)",
+        (uid, amount, t, cat)
+    )
     conn.commit()
 
 

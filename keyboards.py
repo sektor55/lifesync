@@ -36,20 +36,13 @@ def categories_menu():
     ])
 
 def income_categories():
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💼 ЗП", callback_data="inc_cat_ЗП"),
-            InlineKeyboardButton(text="💳 Кешбек", callback_data="inc_cat_Кешбек")
-        ],
-        [
-            InlineKeyboardButton(text="🎁 Подарок", callback_data="inc_cat_Подарок"),
-            InlineKeyboardButton(text="💰 Накопления", callback_data="inc_cat_Накопления")
-        ],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")
-        ]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💼 ЗП", callback_data="inc_cat_ЗП")],
+        [InlineKeyboardButton(text="💳 Кешбек", callback_data="inc_cat_Кешбек")],
+        [InlineKeyboardButton(text="🎁 Подарок", callback_data="inc_cat_Подарок")],
+        [InlineKeyboardButton(text="💰 Накопления", callback_data="inc_cat_Накопления")],
+        [InlineKeyboardButton(text="✏️ Другое", callback_data="inc_cat_custom")]
     ])
-    return kb
 
 def habits_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -63,6 +56,12 @@ def family_menu():
         [InlineKeyboardButton(text="➕ Создать", callback_data="family_create")],
         [InlineKeyboardButton(text="🔗 Вступить", callback_data="family_join")],
         [InlineKeyboardButton(text="👥 Участники", callback_data="family_members")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+    ])
+
+def subscription_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Финансовая система", callback_data="fin_menu")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
