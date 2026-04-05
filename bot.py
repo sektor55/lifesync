@@ -303,9 +303,35 @@ async def sav_add_process(m: Message, state: FSMContext):
     await m.answer(f"✅ Добавлено в накопления: {amount:,} ₽")
 
 @dp.callback_query(F.data == "sav_remove")
-async def sav_remove(c: CallbackQuery, state: FSMContext):
-    await state.set_state(SavingsState.remove)
-    await c.message.answer("Введите сумму для списания:")
+async def remove_savings_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state("remove_savings")
+
+    await c.message.answer("Введите сумму для списания")
+    
+@dp.message(F.text, StateFilter("remove_savings"))
+async def remove_savings_finish(m: Message, state: FSMContext):
+    amount = parse_amount(m.text)
+    user_id = m.from_user.id
+
+    if not amount:
+        await m.answer("❌ Неверная сумма")
+        return
+
+    success = withdraw_savings(user_id, amount)
+
+    if not success:
+        await m.answer("❌ Недостаточно накоплений")
+        return
+
+    # 🔥 ДОБАВЛЯЕМ В ДОХОД
+    add_transaction(user_id, amount, "income", "Накопления")
+
+    await state.clear()
+
+    await m.answer(
+        f"➖ Списано: {amount:,} ₽",
+        reply_markup=keyboards.budget_menu(is_fin_enabled(user_id))
+    )    
     
 @dp.message(SavingsState.remove)
 async def sav_remove_process(m: Message, state: FSMContext):
@@ -357,21 +383,21 @@ async def save_income_part(c: CallbackQuery, state: FSMContext):
         await c.answer("Ошибка")
         return
 
-    amount = data["amount"]
-    category = data["category"]
-    savings = data["savings"]
+    income_part = data["amount"] - data["savings"]
 
-    # 🔥 РАЗДЕЛЕНИЕ
-    add_transaction(user_id, amount - savings, "income", category)
-    add_savings(user_id, savings)
+    # доход (уже без 10%)
+    add_transaction(user_id, income_part, "income", data["category"])
 
-    await state.clear()
+    # накопления
+    add_savings(user_id, data["savings"])
+
     SAVINGS_BUFFER.pop(user_id, None)
+    await state.clear()
 
     await c.message.answer(
-        f"✅ Отложено: {savings:,} ₽\n"
-        f"💰 В доход учтено: {amount - savings:,} ₽",
-        reply_markup=keyboards.budget_menu()
+        f"💰 Отложено: {data['savings']:,} ₽\n"
+        f"💵 В доход учтено: {income_part:,} ₽",
+        reply_markup=keyboards.budget_menu(is_fin_enabled(user_id))
     )
 
 
@@ -419,12 +445,7 @@ async def toggle_fin_handler(c: CallbackQuery):
     await c.answer("Обновлено")
     await fin_menu(c)
 
-@dp.callback_query(F.data == "back_fin")
-async def back_fin(c: CallbackQuery):
-    await c.message.edit_text(
-        "💰 Финансы",
-        reply_markup=keyboards.finance_menu()
-    )    
+@dp.callback_query(F.data == "back_fin"))    
 
 @dp.callback_query(F.data == "savings_menu")
 async def open_savings(c: CallbackQuery):
@@ -446,18 +467,14 @@ async def skip_income_part(c: CallbackQuery, state: FSMContext):
         await c.answer("Ошибка")
         return
 
-    amount = data["amount"]
-    category = data["category"]
+    add_transaction(user_id, data["amount"], "income", data["category"])
 
-    # 🔥 ПОЛНЫЙ ДОХОД
-    add_transaction(user_id, amount, "income", category)
-
-    await state.clear()
     SAVINGS_BUFFER.pop(user_id, None)
+    await state.clear()
 
     await c.message.answer(
-        f"✅ Доход добавлен: {amount:,} ₽ → {category}",
-        reply_markup=keyboards.budget_menu()
+        f"✅ Доход добавлен: {data['amount']:,} ₽",
+        reply_markup=keyboards.budget_menu(is_fin_enabled(user_id))
     )
     
     
@@ -663,7 +680,7 @@ async def stats(c: CallbackQuery):
         text_status = "Отлично"
 
     text += (
-       
+        text += "──────────────────\n\n"
         f"💰 Накопления — {savings} ₽\n"
         f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
     )
@@ -685,22 +702,6 @@ async def income_category(c: CallbackQuery, state: FSMContext):
 
     user_id = c.from_user.id
 
-    # ❗ СПЕЦ-КАТЕГОРИЯ: НАКОПЛЕНИЯ (СНЯТИЕ)
-    if category == "Накопления":
-        success = withdraw_savings(user_id, amount)
-
-        await state.clear()
-
-        if success:
-            await c.message.answer(
-                f"💸 Списано из накоплений: {amount:,} ₽",
-                reply_markup=keyboards.budget_menu()
-            )
-        else:
-            await c.message.answer("❌ Недостаточно накоплений")
-
-        return
-
     # ❗ ЕСЛИ ФИНАНСЫ ВЫКЛЮЧЕНЫ
     if not is_fin_enabled(user_id):
         add_transaction(user_id, amount, "income", category)
@@ -709,7 +710,7 @@ async def income_category(c: CallbackQuery, state: FSMContext):
 
         await c.message.answer(
             f"✅ Доход добавлен: {amount:,} ₽ → {category}",
-            reply_markup=keyboards.budget_menu()
+            reply_markup=keyboards.budget_menu(is_fin_enabled(user_id))
         )
         return
 
@@ -1909,18 +1910,12 @@ def set_fin_enabled(user_id, val: int):
     conn.commit()
 
 
-@dp.message(F.text == "💎 Подписка")
-async def sub_menu(m: Message):
-    enabled = is_fin_enabled(m.from_user.id)
-
-    status = "✅ Активно" if enabled else "❌ Выключено"
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="❌ Выключить" if enabled else "✅ Включить",
-            callback_data="fin_toggle"
-        )]
-    ])
+dp.message(F.text == "💎 Подписка")
+async def subscription_handler(m: Message):
+    await m.answer(
+        "💎 Подписка",
+        reply_markup=keyboards.subscription_menu()
+    )
 
     await m.answer(
         "💰 Финансовая система\n"
@@ -1954,9 +1949,11 @@ async def fin_toggle(c: CallbackQuery):
     
 @dp.message(F.text == "💰 Финансы")
 async def open_finance(m: Message):
+    user_id = m.from_user.id
+
     await m.answer(
         "💰 Финансы",
-        reply_markup=keyboards.budget_menu()
+        reply_markup=keyboards.budget_menu(is_fin_enabled(user_id))
     )
 
 @dp.message(F.text == "🏋️ Привычки")

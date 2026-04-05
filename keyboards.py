@@ -18,13 +18,17 @@ def get_main_menu():
         resize_keyboard=True
     )
 
-def budget_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
+def budget_menu(fin_enabled=True):
+    kb = [
         [InlineKeyboardButton(text="💸 Расход", callback_data="expense")],
         [InlineKeyboardButton(text="💰 Доход", callback_data="income")],
-        [InlineKeyboardButton(text="📊 Аналитика", callback_data="finance_stats")],
-        [InlineKeyboardButton(text="🏦 Накопления", callback_data="savings_menu")]  # 🔥 ВОТ ЭТО ДОБАВЬ
-    ])
+        [InlineKeyboardButton(text="📊 Аналитика", callback_data="finance_stats")]
+    ]
+
+    if fin_enabled:
+        kb.append([InlineKeyboardButton(text="🏦 Накопления", callback_data="savings_menu")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def categories_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -41,7 +45,6 @@ def income_categories():
         [InlineKeyboardButton(text="💼 ЗП", callback_data="inc_cat_ЗП")],
         [InlineKeyboardButton(text="💳 Кешбек", callback_data="inc_cat_Кешбек")],
         [InlineKeyboardButton(text="🎁 Подарок", callback_data="inc_cat_Подарок")],
-        [InlineKeyboardButton(text="💰 Накопления", callback_data="inc_cat_Накопления")],
         [InlineKeyboardButton(text="✏️ Другое", callback_data="inc_cat_custom")]
     ])
 
