@@ -680,7 +680,7 @@ async def stats(c: CallbackQuery):
         text_status = "Отлично"
 
     text += (
-        text += "──────────────────\n\n"
+        "──────────────────\n\n"
         f"💰 Накопления — {savings} ₽\n"
         f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
     )
