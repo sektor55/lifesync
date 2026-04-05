@@ -279,15 +279,58 @@ class AddIncome(StatesGroup):
     sum = State()
     custom = State()
 
+class SavingsState(StatesGroup):
+    add = State()
+    remove = State()
+
+@dp.callback_query(F.data == "sav_add")
+async def sav_add(c: CallbackQuery, state: FSMContext):
+    await state.set_state(SavingsState.add)
+    await c.message.answer("Введите сумму для добавления:")
+
+@dp.message(SavingsState.add)
+async def sav_add_process(m: Message, state: FSMContext):
+    amount = parse_amount(m.text)
+
+    if not amount:
+        await m.answer("❌ Ошибка суммы")
+        return
+
+    add_savings(m.from_user.id, amount)
+
+    await state.clear()
+
+    await m.answer(f"✅ Добавлено в накопления: {amount:,} ₽")
+
+@dp.callback_query(F.data == "sav_remove")
+async def sav_remove(c: CallbackQuery, state: FSMContext):
+    await state.set_state(SavingsState.remove)
+    await c.message.answer("Введите сумму для списания:")
+    
+@dp.message(SavingsState.remove)
+async def sav_remove_process(m: Message, state: FSMContext):
+    amount = parse_amount(m.text)
+
+    if not amount:
+        await m.answer("❌ Ошибка суммы")
+        return
+
+    success = withdraw_savings(m.from_user.id, amount)
+
+    await state.clear()
+
+    if success:
+        await m.answer(f"💸 Списано: {amount:,} ₽")
+    else:
+        await m.answer("❌ Недостаточно средств")    
+    
 
 @dp.callback_query(F.data == "income")
 async def income(c: CallbackQuery, state: FSMContext):
+    await state.clear()  # 🔥 убираем мусор
     await state.set_state(AddIncome.sum)
 
-    await c.message.answer(
-        "Выбери категорию дохода:",
-        reply_markup=keyboards.income_categories()
-    )
+    await c.message.answer("💰 Введите сумму дохода:")
 
 
 @dp.message(AddIncome.sum)
@@ -298,9 +341,6 @@ async def income_sum(m: Message, state: FSMContext):
         await m.answer("❌ Не нашел сумму")
         return
 
-    user_id = m.from_user.id
-
-    # 🔥 ВСЕГДА СПРАШИВАЕМ КАТЕГОРИЮ
     await state.update_data(amount=amount)
 
     await m.answer(
@@ -351,18 +391,28 @@ async def fin_menu(c: CallbackQuery):
     btn_text = "🔴 Выключить" if enabled else "🟢 Включить"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=btn_text, callback_data="toggle_fin")]
+        [InlineKeyboardButton(text=btn_text, callback_data="toggle_fin")],
+        [InlineKeyboardButton(text="💰 Накопления", callback_data="open_savings")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_fin")]
     ])
 
-    await c.message.answer(
+    await c.message.edit_text(
         "💰 Финансовая система\n"
         "«Самый богатый человек в Вавилоне»\n\n"
         "1. Платите себе первым\n"
         "2. Контролируйте расходы\n"
         "3. Создавайте накопления\n"
-        "...\n\n"
+        "4. Увеличивайте доход\n"
+        "5. Инвестируйте\n\n"
         f"Статус: {status}",
         reply_markup=kb
+    )
+
+@dp.callback_query(F.data == "back_fin")
+async def back_fin(c: CallbackQuery):
+    await c.message.edit_text(
+        "💰 Финансы",
+        reply_markup=keyboards.finance_menu()
     )    
 
 
@@ -611,11 +661,27 @@ async def income_category(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     amount = data.get("amount")
 
-    if not amount:
-        await c.message.answer("❌ Ошибка суммы")
+    if amount is None:
+        await c.message.answer("❌ Сначала введи сумму")
         return
 
     user_id = c.from_user.id
+
+    # ❗ СПЕЦ-КАТЕГОРИЯ: НАКОПЛЕНИЯ (СНЯТИЕ)
+    if category == "Накопления":
+        success = withdraw_savings(user_id, amount)
+
+        await state.clear()
+
+        if success:
+            await c.message.answer(
+                f"💸 Списано из накоплений: {amount:,} ₽",
+                reply_markup=keyboards.budget_menu()
+            )
+        else:
+            await c.message.answer("❌ Недостаточно накоплений")
+
+        return
 
     # ❗ ЕСЛИ ФИНАНСЫ ВЫКЛЮЧЕНЫ
     if not is_fin_enabled(user_id):
@@ -629,10 +695,9 @@ async def income_category(c: CallbackQuery, state: FSMContext):
         )
         return
 
-    # 💰 РАСЧЕТ 10%
+    # 💰 ЛОГИКА 10%
     savings_part = int(amount * 0.1)
 
-    # 🔥 СОХРАНЯЕМ ВСЕ ДАННЫЕ
     SAVINGS_BUFFER[user_id] = {
         "amount": amount,
         "category": category,
@@ -1947,7 +2012,6 @@ def get_stats_text(user_id):
 
     avg_percent = int(total_percent / percent_count) if percent_count else 0
 
-    text += "──────────────────\n"
     text += f"💰 Накопления — {total_savings:,} ₽\n\n"
     text += f"📊 Ты откладываешь: {avg_percent}%\n"
 
@@ -1963,6 +2027,19 @@ def get_stats_text(user_id):
     text += "\n\n" + get_motivation_text()
 
     return text
+
+@dp.callback_query(F.data == "open_savings")
+async def open_savings(c: CallbackQuery):
+    if not is_fin_enabled(c.from_user.id):
+        await c.answer("Функция отключена", show_alert=True)
+        return
+
+    balance = get_savings_balance(c.from_user.id)
+
+    await c.message.answer(
+        f"💰 Накопления: {balance:,} ₽",
+        reply_markup=keyboards.savings_menu()
+    )
 
 @dp.message(StartStates.name)
 async def set_name(m: Message, state: FSMContext):

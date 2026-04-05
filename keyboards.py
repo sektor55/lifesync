@@ -44,6 +44,13 @@ def income_categories():
         [InlineKeyboardButton(text="✏️ Другое", callback_data="inc_cat_custom")]
     ])
 
+def savings_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить", callback_data="sav_add")],
+        [InlineKeyboardButton(text="➖ Списать", callback_data="sav_remove")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+    ])
+
 def habits_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить", callback_data="habit_add")],
