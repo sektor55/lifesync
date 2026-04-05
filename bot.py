@@ -191,11 +191,25 @@ async def expense_sum(m: Message, state: FSMContext):
 async def exp_confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    add_transaction(c.from_user.id, data["amount"], "expense", data["category"])
+    amount = data["amount"]
+    category = data["category"]
+
+    # 🔥 НАКОПЛЕНИЯ
+    if category.lower() == "накопления":
+        add_savings(c.from_user.id, amount)
+        await state.clear()
+
+        await c.message.answer(
+            f"💰 {amount} ₽ → Накопления\n\n✔ Перемещено из баланса",
+            reply_markup=keyboards.budget_menu()
+        )
+        return
+
+    add_transaction(c.from_user.id, amount, "expense", category)
     await state.clear()
 
     await c.message.answer(
-        f"✅ {data['amount']} ₽ → {data['category']}",
+        f"✅ {amount} ₽ → {category}",
         reply_markup=keyboards.budget_menu()
     )
 
@@ -309,11 +323,25 @@ async def inc_custom(m: Message, state: FSMContext):
 async def inc_confirm(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    add_transaction(c.from_user.id, data["amount"], "income", data["category"])
+    amount = data["amount"]
+    category = data["category"]
+
+    # 🔥 НАКОПЛЕНИЯ
+    if category.lower() == "накопления":
+        add_savings(c.from_user.id, amount)
+        await state.clear()
+
+        await c.message.answer(
+            f"💰 {amount} ₽ → Накопления\n\n✔ Добавлено в копилку",
+            reply_markup=keyboards.budget_menu()
+        )
+        return
+
+    add_transaction(c.from_user.id, amount, "income", category)
     await state.clear()
 
     await c.message.answer(
-        f"✅ {data['amount']} ₽ → {data['category']}",
+        f"✅ {amount} ₽ → {category}",
         reply_markup=keyboards.budget_menu()
     )
 
@@ -355,15 +383,10 @@ async def stats(c: CallbackQuery):
     total_income_map = {}
     total_expense_map = {}
 
-    # 🔥 БЕРЕМ ТОЛЬКО ЛИЧНЫЕ ДАННЫЕ
     user_income_map = {}
     user_expense_map = {}
 
     for uid in users:
-        income = get_income_stats(uid) if len(users) == 1 else get_income_stats(uid)
-        expense = get_expense_stats(uid) if len(users) == 1 else get_expense_stats(uid)
-
-        # ❗ ФИЛЬТР: берем только его вклад
         cur.execute("""
             SELECT category, SUM(amount)
             FROM transactions
@@ -392,7 +415,6 @@ async def stats(c: CallbackQuery):
     total_income = sum(total_income_map.values())
     total_expense = sum(total_expense_map.values())
 
-    # ДОХОДЫ
     text += "💰 Доходы:\n"
 
     if total_income_map:
@@ -406,24 +428,18 @@ async def stats(c: CallbackQuery):
                 if val > 0:
                     profile = get_user_profile(uid)
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
-                    contributors.append((name, val))
+                    contributors.append((uid, name, val))
 
             if len(contributors) > 1:
-                for uid2 in users:
-                    val = user_income_map.get(uid2, {}).get(cat, 0)
-                    if val > 0:
-                        profile = get_user_profile(uid2)
-                        name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[3] if profile and len(profile) > 3 else "male"
-
-                        emoji = "👤" if gender == "male" else "👩"
-
-                        text += f"  {emoji}{name} — {val} ₽\n"
+                for uid2, name, val in contributors:
+                    profile = get_user_profile(uid2)
+                    gender = profile[3] if profile and len(profile) > 3 else "male"
+                    emoji = "👤" if gender == "male" else "👩"
+                    text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
 
-    # РАСХОДЫ
     text += "\n💸 Расходы:\n"
 
     if total_expense_map:
@@ -437,25 +453,44 @@ async def stats(c: CallbackQuery):
                 if val > 0:
                     profile = get_user_profile(uid)
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
-                    contributors.append((name, val))
+                    contributors.append((uid, name, val))
 
             if len(contributors) > 1:
-                for uid2 in users:
-                    val = user_expense_map.get(uid2, {}).get(cat, 0)
-                    if val > 0:
-                        profile = get_user_profile(uid2)
-                        name = profile[0] if profile and profile[0] else f"id:{uid2}"
-                        gender = profile[3] if profile and len(profile) > 3 else "male"
-
-                        emoji = "👤" if gender == "male" else "👩"
-
-                        text += f"  {emoji}{name} — {val} ₽\n"
+                for uid2, name, val in contributors:
+                    profile = get_user_profile(uid2)
+                    gender = profile[3] if profile and len(profile) > 3 else "male"
+                    emoji = "👤" if gender == "male" else "👩"
+                    text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
 
     text += "\n────────────\n"
 
+    savings = get_savings(c.from_user.id)
+    percent = int((savings / total_income) * 100) if total_income else 0
+
+    if percent == 0:
+        status = "❌"
+        text_status = "Ты пока не платишь себе первым"
+    elif percent < 10:
+        status = "⚠️"
+        text_status = "Ниже нормы (10%)"
+    elif percent < 20:
+        status = "👍"
+        text_status = "Хороший уровень"
+    else:
+        status = "🔥"
+        text_status = "Отлично"
+
+    text += (
+        "\n──────────────────\n\n"
+        f"💰 Накопления — {savings} ₽\n"
+        f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
+    )
+
+    text += "\n\n" + get_motivation_text()
+    
     await c.message.answer(text, reply_markup=keyboards.stats_menu())
 
 
@@ -1674,7 +1709,7 @@ async def stats_inline(m: Message):
 
     await m.answer(text, reply_markup=keyboards.stats_menu())    
 
-def get_stats_text(user_id):
+def get_stats_text(user_id): 
     users = get_family_members(user_id)
 
     text = "📊 Аналитика\n\n"
@@ -1693,7 +1728,6 @@ def get_stats_text(user_id):
         if len(users) > 1:
             text += f"👤 <b>{name}</b>\n"
 
-        # ДОХОДЫ
         text += "💰 Доходы:\n"
         if income:
             for cat, amount in income:
@@ -1702,7 +1736,6 @@ def get_stats_text(user_id):
         else:
             text += "нет данных\n"
 
-        # РАСХОДЫ
         text += "\n💸 Расходы:\n"
         if expenses:
             for cat, amount in expenses:
@@ -1716,44 +1749,87 @@ def get_stats_text(user_id):
 
         text += "\n────────────\n\n"
 
-    return text
+    # 🔥 ВАЖНО — ВНЕ ЦИКЛА
+    savings = get_savings(user_id)
+    total_income = sum(sum(x[1] for x in get_income_stats(uid)) for uid in users)
 
-@dp.message(StartStates.name)
-async def set_name(m: Message, state: FSMContext):
-    await state.update_data(name=m.text)
-    await state.set_state(StartStates.timezone)
+    percent = int((savings / total_income) * 100) if total_income else 0
 
-    await m.answer(
-        "Выбери время относительно МСК:",
-        reply_markup=timezone_kb()
-    )
-
-    
-@dp.callback_query(F.data.startswith("color_"))
-async def set_color_callback(c: CallbackQuery, state: FSMContext):
-    color = c.data.split("_")[1]
-
-    data = await state.get_data()
-
-    if "name" in data:
-        cur.execute("""
-            UPDATE users
-            SET name=?, timezone=?, color=?
-            WHERE id=?
-        """, (data["name"], data["timezone"], color, c.from_user.id))
-        conn.commit()
-
-        await state.clear()
-
-        await c.message.answer("✅ Готово!")
-        await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
-
+    if percent == 0:
+        status = "❌"
+        text_status = "Ты пока не платишь себе первым"
+    elif percent < 10:
+        status = "⚠️"
+        text_status = "Ниже нормы (10%)"
+    elif percent < 20:
+        status = "👍"
+        text_status = "Хороший уровень"
     else:
-        set_user_profile(c.from_user.id, "User", color)
+        status = "🔥"
+        text_status = "Отлично"
 
-        await c.message.edit_text("✅ Цвет сохранён")  
+    text += (
+        "──────────────────\n\n"
+        f"💰 Накопления — {savings} ₽\n"
+        f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
+    )
     
+    text += "\n\n" + get_motivation_text()
     
+    return text  
+    
+async def weekly_report(bot: Bot):
+    import asyncio
+    from datetime import datetime
+
+    while True:
+        now = datetime.now()
+
+        # воскресенье 18:00
+        if now.weekday() == 6 and now.hour == 18:
+            users_checked = set()
+
+            for uid in range(1, 100000):
+                if uid in users_checked:
+                    continue
+
+                users = get_family_members(uid)
+
+                for u in users:
+                    users_checked.add(u)
+
+                text = "📊 Недельный отчет\n\n"
+
+                total_income = 0
+
+                for u in users:
+                    income = get_income_stats(u)
+                    total_income += sum(x[1] for x in income) if income else 0
+
+                savings = get_savings(uid)
+
+                percent = int((savings / total_income) * 100) if total_income else 0
+
+                if percent < 10:
+                    status = "⚠️ Мало откладываешь"
+                elif percent < 20:
+                    status = "👍 Норм"
+                else:
+                    status = "🔥 Отлично"
+
+                text += f"💰 Доход: {total_income} ₽\n"
+                text += f"💸 Накопления: {savings} ₽\n"
+                text += f"📊 {percent}% — {status}"
+
+                try:
+                    await bot.send_message(uid, text)
+                except:
+                    pass
+
+            await asyncio.sleep(3600)
+        else:
+            await asyncio.sleep(60)
+  
 async def weekly_reset_worker():
     from datetime import datetime, timedelta
     import asyncio
@@ -2014,9 +2090,23 @@ async def start(m: Message, state: FSMContext):
     )
 
 
+@dp.message(F.text.startswith("-"))
+async def remove_money(m: Message):
+    try:
+        amount = int(m.text.replace("-", "").strip())
+        remove_savings(m.from_user.id, amount)
+        await m.answer(f"❌ Снято {amount} ₽ с накоплений")
+    except:
+        await m.answer("Ошибка")
+
+
 async def main():
     asyncio.create_task(reminder_worker(bot))
     asyncio.create_task(weekly_reset_worker())
+
+    # ✅ ВОТ ЭТА СТРОКА НОВАЯ
+    asyncio.create_task(weekly_report(bot))
+
     await dp.start_polling(bot)
 
 

@@ -94,6 +94,14 @@ def init_users_update():
 
 init_users_update()
 
+def add_savings_column():
+    cur.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cur.fetchall()]
+
+    if "savings" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
+        conn.commit()
+      
 
 cur.execute("""CREATE TABLE IF NOT EXISTS transactions(
 user_id INTEGER,
@@ -142,6 +150,16 @@ conn.commit()
 
 def add_transaction(uid, amount, t, cat):
     cur.execute("INSERT INTO transactions VALUES(?,?,?,?)",(uid,amount,t,cat))
+
+    # 🔥 АВТОКОПИЛКА 10%
+    if t == "income":
+        save_amount = int(amount * 0.1)
+        cur.execute("""
+            UPDATE users
+            SET savings = COALESCE(savings,0) + ?
+            WHERE id=?
+        """, (save_amount, uid))
+
     conn.commit()
 
 
@@ -474,9 +492,9 @@ def set_user_profile(user_id, name, color):
 
 def get_user_profile(user_id):
     cur.execute("""
-        SELECT name, timezone, color FROM users WHERE id=?
+        SELECT name, timezone, color, gender FROM users WHERE id=?
     """, (user_id,))
-    return cur.fetchone()    
+    return cur.fetchone())    
     
 import sqlite3
 
@@ -526,3 +544,37 @@ def rename_family(family_id, new_name):
 def set_gender(user_id, gender):
     cur.execute("UPDATE users SET gender=? WHERE id=?", (gender, user_id))
     conn.commit()    
+    
+def get_savings(user_id):
+    cur.execute("SELECT savings FROM users WHERE id=?", (user_id,))
+    res = cur.fetchone()
+    return res[0] if res and res[0] else 0
+
+
+def add_savings(user_id, amount):
+    cur.execute("""
+        UPDATE users
+        SET savings = COALESCE(savings,0) + ?
+        WHERE id=?
+    """, (amount, user_id))
+    conn.commit()
+
+
+def remove_savings(user_id, amount):
+    cur.execute("""
+        UPDATE users
+        SET savings = COALESCE(savings,0) - ?
+        WHERE id=?
+    """, (amount, user_id))
+    conn.commit()    
+    
+def get_motivation_text():
+    texts = [
+        "💡 Сначала заплати себе, потом всем остальным",
+        "💰 Бедные тратят — богатые откладывают",
+        "📈 10% сегодня = свобода завтра",
+        "🔥 Контроль денег = контроль жизни"
+    ]
+
+    import random
+    return random.choice(texts)    
