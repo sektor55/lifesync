@@ -94,19 +94,6 @@ def init_users_update():
 
 init_users_update()
 
-def fix_db():
-    columns = [col[1] for col in cur.execute("PRAGMA table_info(users)").fetchall()]
-
-    if "gender" not in columns:
-        cur.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
-
-    if "tz" not in columns:
-        cur.execute("ALTER TABLE users ADD COLUMN tz INTEGER DEFAULT 0")
-
-    if "savings" not in columns:
-        cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
-
-    conn.commit()
 
 def add_savings_column():
     cur.execute("PRAGMA table_info(users)")
@@ -115,6 +102,10 @@ def add_savings_column():
     if "savings" not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
         conn.commit()
+     
+def get_savings(user_id):
+    return get_savings_balance(user_id)     
+     
       
 
 cur.execute("""CREATE TABLE IF NOT EXISTS transactions(
@@ -650,62 +641,19 @@ def get_savings_percent(user_id):
 
 
 def fix_db():
-    # USERS
-    try:
+    columns = [col[1] for col in cur.execute("PRAGMA table_info(users)").fetchall()]
+
+    if "gender" not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
-    except:
-        pass
 
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN family_id TEXT")
-    except:
-        pass
+    if "tz" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN tz INTEGER DEFAULT 0")
 
-    try:
+    if "savings" not in columns:
         cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
-    except:
-        pass
 
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN timezone INTEGER")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN name TEXT")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN color TEXT")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN shared_finance INTEGER DEFAULT 1")
-    except:
-        pass
-
-    # HABITS
-    try:
-        cur.execute("ALTER TABLE habits ADD COLUMN tz INTEGER DEFAULT 0")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE habits ADD COLUMN reminder INTEGER")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE habits ADD COLUMN family_id TEXT")
-    except:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE habits ADD COLUMN task_type TEXT")
-    except:
-        pass
+    if "fin_enabled" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN fin_enabled INTEGER DEFAULT 1")
 
     conn.commit()
     

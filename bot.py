@@ -1965,9 +1965,9 @@ async def finance_notifications_worker(bot: Bot):
 @dp.callback_query(F.data.startswith("color_"))
 async def set_color_callback(c: CallbackQuery, state: FSMContext):
     color = c.data.split("_")[1]
-
     data = await state.get_data()
 
+    # ✅ сохраняем профиль (как у тебя было)
     if "name" in data:
         cur.execute("""
             UPDATE users
@@ -1981,6 +1981,11 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
         await c.message.answer("✅ Готово!")
         await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
 
+    # =========================
+    # 💰 ДОБАВЛЯЕМ ФИН БЛОК ПРАВИЛЬНО
+    # =========================
+    percent = get_savings_percent(c.from_user.id)
+    savings = get_savings_balance(c.from_user.id)
 
     if percent == 0:
         status = "❌"
@@ -1995,15 +2000,19 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
         status = "🔥"
         text_status = "Отлично"
 
-    text += (
+    text = (
         "──────────────────\n\n"
         f"💰 Накопления — {savings} ₽\n"
         f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
     )
-    
-    text += "\n\n" + get_motivation_text()
-    
-    return text  
+
+    # если у тебя есть функция мотивации
+    try:
+        text += "\n\n" + get_motivation_text()
+    except:
+        pass
+
+    await c.message.answer(text)  
     
   
 async def weekly_reset_worker():
