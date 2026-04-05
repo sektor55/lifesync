@@ -22,7 +22,8 @@ def budget_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💸 Расход", callback_data="expense")],
         [InlineKeyboardButton(text="💰 Доход", callback_data="income")],
-        [InlineKeyboardButton(text="📊 Аналитика", callback_data="finance_stats")]
+        [InlineKeyboardButton(text="📊 Аналитика", callback_data="finance_stats")],
+        [InlineKeyboardButton(text="🏦 Накопления", callback_data="savings_menu")]  # 🔥 ВОТ ЭТО ДОБАВЬ
     ])
 
 def categories_menu():
@@ -48,7 +49,7 @@ def savings_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить", callback_data="sav_add")],
         [InlineKeyboardButton(text="➖ Списать", callback_data="sav_remove")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_fin")]
     ])
 
 def habits_menu():
@@ -69,6 +70,7 @@ def family_menu():
 def subscription_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Финансовая система", callback_data="fin_menu")],
+        [InlineKeyboardButton(text="🌅 Магия утра", callback_data="morning_menu")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 

@@ -392,21 +392,32 @@ async def fin_menu(c: CallbackQuery):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_text, callback_data="toggle_fin")],
-        [InlineKeyboardButton(text="💰 Накопления", callback_data="open_savings")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_fin")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_sub")]
     ])
 
-    await c.message.edit_text(
+    await c.message.answer(
         "💰 Финансовая система\n"
         "«Самый богатый человек в Вавилоне»\n\n"
         "1. Платите себе первым\n"
         "2. Контролируйте расходы\n"
         "3. Создавайте накопления\n"
         "4. Увеличивайте доход\n"
-        "5. Инвестируйте\n\n"
+        "5. Инвестируйте\n"
+        "6. Не влезайте в долги\n"
+        "7. Защищайте капитал\n"
+        "8. Думайте самостоятельно\n"
+        "9. Учитесь на ошибках\n"
+        "10. Используйте ресурсы разумно\n\n"
         f"Статус: {status}",
         reply_markup=kb
     )
+
+@dp.callback_query(F.data == "toggle_fin")
+async def toggle_fin_handler(c: CallbackQuery):
+    toggle_fin(c.from_user.id)
+
+    await c.answer("Обновлено")
+    await fin_menu(c)
 
 @dp.callback_query(F.data == "back_fin")
 async def back_fin(c: CallbackQuery):
@@ -415,7 +426,16 @@ async def back_fin(c: CallbackQuery):
         reply_markup=keyboards.finance_menu()
     )    
 
+@dp.callback_query(F.data == "savings_menu")
+async def open_savings(c: CallbackQuery):
+    if not is_fin_enabled(c.from_user.id):
+        await c.answer("❌ Финансовая система выключена", show_alert=True)
+        return
 
+    await c.message.answer(
+        "🏦 Накопления",
+        reply_markup=keyboards.savings_menu()
+    )
 
 @dp.callback_query(F.data == "skip_income_part")
 async def skip_income_part(c: CallbackQuery, state: FSMContext):
@@ -626,8 +646,6 @@ async def stats(c: CallbackQuery):
     else:
         text += "нет данных\n"
 
-    text += "\n────────────\n"
-
     savings = get_savings(c.from_user.id)
     percent = int((savings / total_income) * 100) if total_income else 0
 
@@ -645,7 +663,7 @@ async def stats(c: CallbackQuery):
         text_status = "Отлично"
 
     text += (
-        "\n──────────────────\n\n"
+       
         f"💰 Накопления — {savings} ₽\n"
         f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
     )

@@ -631,10 +631,12 @@ def get_savings_percent(user_id):
     savings = get_savings_balance(user_id)
     income = get_total_income(user_id)
 
-    if income == 0:
+    total = income + savings  # 🔥 ВАЖНО
+
+    if total == 0:
         return 0
 
-    return int((savings / income) * 100)
+    return int((savings / total) * 100)
 
 
 def fix_db():
