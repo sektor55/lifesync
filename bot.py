@@ -297,6 +297,16 @@ async def income_sum(m: Message, state: FSMContext):
     category = detect_income_category(m.text)
     user_id = m.from_user.id
 
+    # 🔥 ЕСЛИ НЕ ОПРЕДЕЛИЛАСЬ — ДАЕМ ВЫБОР
+    if not category:
+        await state.update_data(amount=amount)
+
+        await m.answer(
+            "💰 Выбери категорию дохода:",
+            reply_markup=keyboards.income_categories()
+        )
+        return
+
     await state.update_data(amount=amount, category=category)
 
     # ❗ ЕСЛИ ВЫКЛЮЧЕНО — ПРОСТО ДОХОД
@@ -306,7 +316,7 @@ async def income_sum(m: Message, state: FSMContext):
         await state.clear()
 
         await m.answer(
-            f"✅ Доход добавлен: {amount:,} ₽",
+            f"✅ Доход добавлен: {amount:,} ₽ → {category}",
             reply_markup=keyboards.budget_menu()
         )
         return
@@ -596,7 +606,47 @@ async def stats(c: CallbackQuery):
     
     await c.message.answer(text, reply_markup=keyboards.stats_menu())
 
+@dp.callback_query(F.data.startswith("inc_cat_"))
+async def income_category(c: CallbackQuery, state: FSMContext):
+    category = c.data.split("_")[2]
 
+    data = await state.get_data()
+    amount = data.get("amount")
+
+    if not amount:
+        await c.message.answer("❌ Ошибка суммы")
+        return
+
+    user_id = c.from_user.id
+
+    # ❗ ЕСЛИ ФИНАНСЫ ВЫКЛЮЧЕНЫ
+    if not is_fin_enabled(user_id):
+        add_transaction(user_id, amount, "income", category)
+
+        await state.clear()
+
+        await c.message.answer(
+            f"✅ Доход добавлен: {amount:,} ₽ → {category}",
+            reply_markup=keyboards.budget_menu()
+        )
+        return
+
+    # 💰 ЛОГИКА ТЗ
+    savings_part = int(amount * 0.1)
+    SAVINGS_BUFFER[user_id] = savings_part
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="💰 Отложить", callback_data="save_income_part"),
+            InlineKeyboardButton(text="❌ Пропустить", callback_data="skip_income_part")
+        ]
+    ])
+
+    await c.message.answer(
+        f"💰 Доход: {amount:,} ₽ → {category}\n\n"
+        f"📌 Отложить 10%?\n👉 {savings_part:,} ₽",
+        reply_markup=kb
+    )
 
 # =========================
 # 📉 ГРАФИК РАСХОДОВ
@@ -1756,9 +1806,16 @@ async def settings_timezone(c: CallbackQuery):
    
 def is_fin_enabled(user_id):
     cur.execute("SELECT fin_enabled FROM users WHERE id=?", (user_id,))
-    row = cur.fetchone()
-    return row and row[0] == 1
-
+    res = cur.fetchone()
+    return res[0] if res else 1
+    
+def toggle_fin(user_id):
+    cur.execute("""
+        UPDATE users
+        SET fin_enabled = CASE WHEN fin_enabled=1 THEN 0 ELSE 1 END
+        WHERE id=?
+    """, (user_id,))
+    conn.commit()
 
 def set_fin_enabled(user_id, val: int):
     cur.execute("UPDATE users SET fin_enabled=? WHERE id=?", (val, user_id))
@@ -1854,7 +1911,6 @@ def get_stats_text(user_id):
         total_income = sum(x[1] for x in income) if income else 0
         balance = total_income - total_expense
 
-        # накопления
         total_savings += get_savings_balance(uid)
 
         p = get_savings_percent(uid)
@@ -1883,26 +1939,24 @@ def get_stats_text(user_id):
 
         text += f"\n📈 Баланс: {balance} ₽"
         text += f"\nДоход: {total_income} ₽ | Расход: {total_expense} ₽"
-
         text += "\n────────────\n\n"
 
-    # 💰 ОБЩИЕ НАКОПЛЕНИЯ
     avg_percent = int(total_percent / percent_count) if percent_count else 0
 
     text += "──────────────────\n"
-    text += f"💰 Накопления — {total_savings:,} ₽\n"
-    text += "твоя финансовая подушка\n\n"
-
+    text += f"💰 Накопления — {total_savings:,} ₽\n\n"
     text += f"📊 Ты откладываешь: {avg_percent}%\n"
 
     if avg_percent == 0:
         text += "❌ Начни копить\n"
     elif avg_percent < 10:
-        text += "⚠️ Ниже нормы (10%)\n"
+        text += "⚠️ Ниже нормы\n"
     elif avg_percent < 15:
         text += "👍 Хорошо\n"
     else:
         text += "🔥 Отлично\n"
+
+    text += "\n\n" + get_motivation_text()
 
     return text
 
@@ -1967,7 +2021,6 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
     color = c.data.split("_")[1]
     data = await state.get_data()
 
-    # ✅ сохраняем профиль (как у тебя было)
     if "name" in data:
         cur.execute("""
             UPDATE users
@@ -1979,40 +2032,7 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
         await state.clear()
 
         await c.message.answer("✅ Готово!")
-        await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())
-
-    # =========================
-    # 💰 ДОБАВЛЯЕМ ФИН БЛОК ПРАВИЛЬНО
-    # =========================
-    percent = get_savings_percent(c.from_user.id)
-    savings = get_savings_balance(c.from_user.id)
-
-    if percent == 0:
-        status = "❌"
-        text_status = "Ты пока не платишь себе первым"
-    elif percent < 10:
-        status = "⚠️"
-        text_status = "Ниже нормы (10%)"
-    elif percent < 20:
-        status = "👍"
-        text_status = "Хороший уровень"
-    else:
-        status = "🔥"
-        text_status = "Отлично"
-
-    text = (
-        "──────────────────\n\n"
-        f"💰 Накопления — {savings} ₽\n"
-        f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
-    )
-
-    # если у тебя есть функция мотивации
-    try:
-        text += "\n\n" + get_motivation_text()
-    except:
-        pass
-
-    await c.message.answer(text)  
+        await c.message.answer("🏠 Главное меню", reply_markup=keyboards.get_main_menu())  
     
   
 async def weekly_reset_worker():

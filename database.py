@@ -658,3 +658,14 @@ def fix_db():
     conn.commit()
     
 fix_db()    
+
+import random
+
+def get_motivation_text():
+    texts = [
+        "💡 Сначала заплати себе, потом всем остальным",
+        "💰 Бедные тратят — богатые откладывают",
+        "📈 10% сегодня = свобода завтра",
+        "🔥 Контроль денег = контроль жизни"
+    ]
+    return random.choice(texts)
