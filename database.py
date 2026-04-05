@@ -94,6 +94,20 @@ def init_users_update():
 
 init_users_update()
 
+def fix_db():
+    columns = [col[1] for col in cur.execute("PRAGMA table_info(users)").fetchall()]
+
+    if "gender" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
+
+    if "tz" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN tz INTEGER DEFAULT 0")
+
+    if "savings" not in columns:
+        cur.execute("ALTER TABLE users ADD COLUMN savings INTEGER DEFAULT 0")
+
+    conn.commit()
+
 def add_savings_column():
     cur.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cur.fetchall()]
@@ -694,3 +708,5 @@ def fix_db():
         pass
 
     conn.commit()
+    
+fix_db()    
