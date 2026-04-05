@@ -494,7 +494,7 @@ def get_user_profile(user_id):
     cur.execute("""
         SELECT name, timezone, color, gender FROM users WHERE id=?
     """, (user_id,))
-    return cur.fetchone())    
+    return cur.fetchone()    
     
 import sqlite3
 
