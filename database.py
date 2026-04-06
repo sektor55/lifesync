@@ -744,14 +744,17 @@ def toggle_morning(user_id):
 
     return new_val
     
- def complete_morning_step(user_id, step, date):
+def complete_morning_step(user_id, step, date):
+    # удаляем старую запись (если есть)
     cur.execute("""
         DELETE FROM morning_logs
         WHERE user_id=? AND step=? AND date=?
     """, (user_id, step, date))
 
+    # вставляем новую
     cur.execute("""
-        INSERT INTO morning_logs VALUES(?,?,?,?)
+        INSERT INTO morning_logs (user_id, step, date, status)
+        VALUES (?, ?, ?, ?)
     """, (user_id, step, date, 1))
 
     conn.commit()   
