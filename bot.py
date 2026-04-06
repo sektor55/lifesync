@@ -633,11 +633,20 @@ async def stats(c: CallbackQuery):
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
                     contributors.append((uid, name, val))
 
+            # ❗ НЕ ТРОГАЕМ твою логику (>1)
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
-                    gender = (profile[3] if profile and len(profile) > 3 else "male") or "male"
-                    emoji = "👩" if str(gender).lower() in ["female", "woman", "f", "ж", "жен"] else "👤"
+
+                    gender = "male"
+                    if profile and len(profile) > 3 and profile[3]:
+                        gender = str(profile[3]).lower()
+
+                    if gender in ["female", "f", "woman", "ж", "жен"]:
+                        emoji = "👩"
+                    else:
+                        emoji = "👤"
+
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
@@ -658,17 +667,25 @@ async def stats(c: CallbackQuery):
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
                     contributors.append((uid, name, val))
 
+            # ❗ НЕ ТРОГАЕМ твою логику (>1)
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
-                    gender = (profile[3] if profile and len(profile) > 3 else "male") or "male"
-                    emoji = "👩" if str(gender).lower() in ["female", "woman", "f", "ж", "жен"] else "👤"
+
+                    gender = "male"
+                    if profile and len(profile) > 3 and profile[3]:
+                        gender = str(profile[3]).lower()
+
+                    if gender in ["female", "f", "woman", "ж", "жен"]:
+                        emoji = "👩"
+                    else:
+                        emoji = "👤"
+
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
 
-    # ✅ ИТОГИ (НОВЫЙ ФОРМАТ)
     balance = total_income - total_expense
 
     text += (
@@ -1928,27 +1945,7 @@ async def subscription_handler(m: Message):
     await m.answer(
         "Выбери функцию:",
         reply_markup=keyboards.subscription_menu()
-    )
-
-    await m.answer(
-        "💰 Финансовая система\n"
-        "«Самый богатый человек в Вавилоне»\n\n"
-        "────────────\n\n"
-        "Постулаты:\n\n"
-        "1. Платите себе первым\n"
-        "2. Контролируйте расходы\n"
-        "3. Создавайте накопления\n"
-        "4. Увеличивайте доход\n"
-        "5. Инвестируйте\n"
-        "6. Не влезайте в долги\n"
-        "7. Защищайте капитал\n"
-        "8. Думайте самостоятельно\n"
-        "9. Учитесь на ошибках\n"
-        "10. Используйте ресурсы разумно\n\n"
-        "────────────\n\n"
-        f"Статус: {status}",
-        reply_markup=kb
-    )
+    ))
 
 @dp.callback_query(F.data == "back_sub")
 async def back_subscription(c: CallbackQuery):
