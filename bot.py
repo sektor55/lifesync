@@ -636,8 +636,8 @@ async def stats(c: CallbackQuery):
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
-                    gender = profile[3] if profile and len(profile) > 3 else "male"
-                    emoji = "👩" if gender == "female" else "👤"
+                    gender = (profile[3] if profile and len(profile) > 3 else "male") or "male"
+                    emoji = "👩" if str(gender).lower() in ["female", "woman", "f", "ж", "жен"] else "👤"
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
@@ -661,8 +661,8 @@ async def stats(c: CallbackQuery):
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
-                    gender = profile[3] if profile and len(profile) > 3 else "male"
-                    emoji = "👩" if gender == "female" else "👤"
+                    gender = (profile[3] if profile and len(profile) > 3 else "male") or "male"
+                    emoji = "👩" if str(gender).lower() in ["female", "woman", "f", "ж", "жен"] else "👤"
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:

@@ -348,11 +348,11 @@ def mark_reminded(habit_id, user_id, day_key):
     """, (habit_id, user_id, day_key))
     conn.commit()
     
-def add_user(user_id, name="User"):
+def add_user(user_id, name="User", gender="male"):
     cur.execute("""
-        INSERT OR IGNORE INTO users (id, name)
-        VALUES (?, ?)
-    """, (user_id, name))
+        INSERT OR IGNORE INTO users (id, name, gender)
+        VALUES (?, ?, ?)
+    """, (user_id, name, gender))
 
 
 def get_user(user_id):
@@ -477,14 +477,25 @@ def get_family_members(user_id):
     )
     return [x[0] for x in cur.fetchall()]
     
-def set_user_profile(user_id, name, color):
-    cur.execute("""
-        INSERT INTO users (id, name, color)
-        VALUES (?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            name=excluded.name,
-            color=excluded.color
-    """, (user_id, name, color))
+def set_user_profile(user_id, name, color, gender=None):
+    if gender is None:
+        cur.execute("""
+            INSERT INTO users (id, name, color)
+            VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                color=excluded.color
+        """, (user_id, name, color))
+    else:
+        cur.execute("""
+            INSERT INTO users (id, name, color, gender)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                color=excluded.color,
+                gender=excluded.gender
+        """, (user_id, name, color, gender))
+
     conn.commit()
 
 
