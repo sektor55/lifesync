@@ -577,7 +577,7 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
 # =========================
 # 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
 # =========================
-@@dp.callback_query(F.data == "finance_stats")
+@dp.callback_query(F.data == "finance_stats")
 async def stats(c: CallbackQuery):
     users = get_family_members(c.from_user.id)
 
