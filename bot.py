@@ -2455,7 +2455,9 @@ from datetime import datetime
 # =========================
 # TIMER
 # =========================
-async def start_morning_timer(bot, chat_id, message_id, duration, text):
+async def start_morning_timer(bot, chat_id, message_id, duration, text, user_id):
+    ACTIVE_TIMERS[user_id] = (chat_id, message_id)
+
     remaining = duration
 
     while remaining > 0:
@@ -2485,6 +2487,8 @@ async def start_morning_timer(bot, chat_id, message_id, duration, text):
     except:
         pass
 
+    ACTIVE_TIMERS.pop(user_id, None)
+
 
 # =========================
 # VISUALIZATION
@@ -2502,10 +2506,10 @@ async def start_visualization(bot, chat_id, user_id, duration):
         await bot.send_message(chat_id, "Нет изображений")
         return
 
-    delay = duration // len(images)
+    delay = 30  # 👈 фикс 30 секунд
 
-    for img in images:
-        await bot.send_photo(chat_id, img, caption="🧠 Сконцентрируйся")
+    for i, img in enumerate(images, start=1):
+        await bot.send_photo(chat_id, img, caption=f"🧠 {i}/{len(images)}")
         await asyncio.sleep(delay)
 
     await bot.send_message(chat_id, "✅ Выполнено")
@@ -2525,7 +2529,10 @@ async def finish_step_and_return(c, step):
 
     complete_morning_step(c.from_user.id, step, date)
 
-    await c.answer("✅ Выполнено")
+    try:
+        await c.answer("✅ Выполнено")
+    except:
+        pass
 
     await open_morning_menu(c)
 
@@ -2559,7 +2566,7 @@ async def open_morning_menu(call: CallbackQuery):
     text = MORNING_TEXT
 
     if enabled:
-        text += f"\n\n📊 Прогресс:\n{progress}"
+        text += f"\n\n📊 Прогресс:\n\n{progress}"
 
     await call.message.edit_text(
         text,
@@ -2596,6 +2603,21 @@ async def silence_menu(c: CallbackQuery):
 
 @dp.callback_query(F.data == "start_silence")
 async def start_silence(c: CallbackQuery):
+    # 🔥 если уже есть таймер — возвращаем к нему
+    if c.from_user.id in ACTIVE_TIMERS:
+        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
+
+        try:
+            await c.bot.forward_message(
+                chat_id=c.message.chat.id,
+                from_chat_id=chat_id,
+                message_id=message_id
+            )
+        except:
+            pass
+
+        return
+
     msg = await c.message.edit_text("Запуск...")
 
     await start_morning_timer(
@@ -2603,7 +2625,8 @@ async def start_silence(c: CallbackQuery):
         c.message.chat.id,
         msg.message_id,
         300,
-        "🧘 Тишина"
+        "🧘 Тишина",
+        c.from_user.id
     )
 
     await finish_step_and_return(c, 1)
@@ -2636,6 +2659,21 @@ async def affirm_menu(c: CallbackQuery):
 
 @dp.callback_query(F.data == "start_affirm")
 async def start_affirm(c: CallbackQuery):
+    # 🔥 возврат к активному таймеру
+    if c.from_user.id in ACTIVE_TIMERS:
+        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
+
+        try:
+            await c.bot.forward_message(
+                chat_id=c.message.chat.id,
+                from_chat_id=chat_id,
+                message_id=message_id
+            )
+        except:
+            pass
+
+        return
+
     cur.execute("SELECT text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
     rows = cur.fetchall()
 
@@ -2648,7 +2686,8 @@ async def start_affirm(c: CallbackQuery):
         c.message.chat.id,
         msg.message_id,
         300,
-        text
+        text,
+        c.from_user.id
     )
 
     await finish_step_and_return(c, 2)
@@ -2669,6 +2708,7 @@ async def visual_menu(c: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="▶️ Начать", callback_data="start_visual")],
             [InlineKeyboardButton(text="➕ Добавить картинку", callback_data="add_visual")],
+            [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_visual")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
         ])
     )
@@ -2705,6 +2745,20 @@ async def move_menu(c: CallbackQuery):
 
 @dp.callback_query(F.data == "start_move")
 async def start_move(c: CallbackQuery):
+    if c.from_user.id in ACTIVE_TIMERS:
+        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
+
+        try:
+            await c.bot.forward_message(
+                chat_id=c.message.chat.id,
+                from_chat_id=chat_id,
+                message_id=message_id
+            )
+        except:
+            pass
+
+        return
+
     msg = await c.message.edit_text("Запуск...")
 
     await start_morning_timer(
@@ -2712,7 +2766,8 @@ async def start_move(c: CallbackQuery):
         c.message.chat.id,
         msg.message_id,
         300,
-        "🏃 Движение"
+        "🏃 Движение",
+        c.from_user.id
     )
 
     await finish_step_and_return(c, 4)
@@ -2737,6 +2792,20 @@ async def read_menu(c: CallbackQuery):
 
 @dp.callback_query(F.data == "start_read")
 async def start_read(c: CallbackQuery):
+    if c.from_user.id in ACTIVE_TIMERS:
+        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
+
+        try:
+            await c.bot.forward_message(
+                chat_id=c.message.chat.id,
+                from_chat_id=chat_id,
+                message_id=message_id
+            )
+        except:
+            pass
+
+        return
+
     msg = await c.message.edit_text("Запуск...")
 
     await start_morning_timer(
@@ -2744,7 +2813,8 @@ async def start_read(c: CallbackQuery):
         c.message.chat.id,
         msg.message_id,
         300,
-        "📖 Чтение"
+        "📖 Чтение",
+        c.from_user.id
     )
 
     await finish_step_and_return(c, 5)
@@ -2793,9 +2863,15 @@ async def save_affirm(m: Message, state: FSMContext):
     )
     conn.commit()
 
-    await m.answer("✅ Добавлено")
     await state.clear()
 
+    # 👇 сразу открываем меню обратно
+    fake_call = type("obj", (), {
+        "from_user": m.from_user,
+        "message": m
+    })
+
+    await affirm_menu(fake_call)
 
 @dp.callback_query(F.data == "add_visual")
 async def add_visual(c: CallbackQuery, state: FSMContext):
@@ -2808,17 +2884,88 @@ async def save_img(m: Message, state: FSMContext):
     if not m.photo:
         return
 
+    # берем все позиции
+    cur.execute("""
+        SELECT position FROM morning_visualization
+        WHERE user_id=?
+        ORDER BY position
+    """, (m.from_user.id,))
+    used = [x[0] for x in cur.fetchall()]
+
+    # ищем первую свободную позицию
+    position = 1
+    while position in used:
+        position += 1
+
+    if position > 10:
+        await m.answer("❌ Максимум 10 картинок. Удали старые")
+        return
+
     file_id = m.photo[-1].file_id
 
     cur.execute(
         "INSERT INTO morning_visualization VALUES(?,?,?)",
-        (m.from_user.id, file_id, 0)
+        (m.from_user.id, file_id, position)
     )
     conn.commit()
 
-    await m.answer("✅ Сохранено")
     await state.clear()
-    
+
+    await m.answer(f"✅ Добавлено {position}/10")
+
+    fake_call = type("obj", (), {
+        "from_user": m.from_user,
+        "message": m
+    })
+
+    await visual_menu(fake_call)
+ 
+@dp.callback_query(F.data == "delete_visual")
+async def delete_visual_menu(c: CallbackQuery):
+    cur.execute("""
+        SELECT position FROM morning_visualization
+        WHERE user_id=?
+        ORDER BY position
+    """, (c.from_user.id,))
+
+    rows = [x[0] for x in cur.fetchall()]
+
+    if not rows:
+        return await c.answer("Нет картинок", show_alert=True)
+
+    kb = []
+
+    for pos in rows:
+        kb.append([
+            InlineKeyboardButton(
+                text=f"❌ Удалить {pos}",
+                callback_data=f"del_visual_{pos}"
+            )
+        ])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="m_step_3")])
+
+    await c.message.edit_text("Выбери картинку:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)) 
+ 
+@dp.callback_query(F.data.startswith("del_visual_"))
+async def delete_visual(c: CallbackQuery):
+    pos = int(c.data.split("_")[2])
+
+    cur.execute("""
+        DELETE FROM morning_visualization
+        WHERE user_id=? AND position=?
+    """, (c.from_user.id, pos))
+
+    conn.commit()
+
+    await c.answer("Удалено")
+
+    await delete_visual_menu(c) 
+
+
+ACTIVE_TIMERS = {}  # user_id: (chat_id, message_id)
+
+ 
 def get_morning_progress(user_id):
     from datetime import datetime
 
@@ -2831,11 +2978,13 @@ def get_morning_progress(user_id):
 
     done_steps = [row[0] for row in cur.fetchall()]
 
+    color = get_user_color(user_id)
+
     bar = ""
 
     for i in range(1, 7):
         if i in done_steps:
-            bar += "🟩"
+            bar += color
         else:
             bar += "⬜"
 
