@@ -445,7 +445,12 @@ async def toggle_fin_handler(c: CallbackQuery):
     await c.answer("Обновлено")
     await fin_menu(c)
 
-@dp.callback_query(F.data == "back_fin")   
+@dp.callback_query(F.data == "back_fin")
+async def back_fin(c: CallbackQuery):
+    await c.message.answer(
+        "📊 Финансы",
+        reply_markup=keyboards.budget_menu(is_fin_enabled(c.from_user.id))
+    )  
 
 @dp.callback_query(F.data == "savings_menu")
 async def open_savings(c: CallbackQuery):
@@ -662,6 +667,17 @@ async def stats(c: CallbackQuery):
 
     else:
         text += "нет данных\n"
+
+    # =========================
+    # ✅ ДОБАВЛЕНО: ИТОГИ (НЕ ЛОМАЕТ ЛОГИКУ)
+    # =========================
+    balance = total_income - total_expense
+
+    text += (
+        "\n──────────────────\n"
+        f"📈 Баланс: {balance} ₽\n"
+        f"💰 Доход: {total_income} ₽ | Расход: {total_expense} ₽\n"
+    )
 
     savings = get_savings(c.from_user.id)
     percent = int((savings / total_income) * 100) if total_income else 0
@@ -1910,10 +1926,10 @@ def set_fin_enabled(user_id, val: int):
     conn.commit()
 
 
-dp.message(F.text == "💎 Подписка")
+@dp.message(F.text == "💎 Подписка")
 async def subscription_handler(m: Message):
     await m.answer(
-        "💎 Подписка",
+        "📦 Подписка\n\nВыбери функцию:",
         reply_markup=keyboards.subscription_menu()
     )
 
