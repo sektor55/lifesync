@@ -2841,6 +2841,32 @@ def get_morning_progress(user_id):
 
     return bar    
 
+def morning_menu_kb(enabled):
+    kb = []
+
+    kb.append([
+        InlineKeyboardButton(
+            text="🔘 Включить" if not enabled else "✅ Выключить",
+            callback_data="toggle_morning"
+        )
+    ])
+
+    if enabled:
+        kb += [
+            [InlineKeyboardButton(text="1. 🧘 Тишина", callback_data="m_step_1")],
+            [InlineKeyboardButton(text="2. 💬 Аффирмации", callback_data="m_step_2")],
+            [InlineKeyboardButton(text="3. 🧠 Визуализация", callback_data="m_step_3")],
+            [InlineKeyboardButton(text="4. 🏃 Движение", callback_data="m_step_4")],
+            [InlineKeyboardButton(text="5. 📖 Чтение", callback_data="m_step_5")],
+            [InlineKeyboardButton(text="6. 🤖 Планирование", callback_data="m_step_6")],
+        ]
+
+    kb.append([
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="back_sub")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 async def main():
     asyncio.create_task(reminder_worker(bot))
     asyncio.create_task(weekly_reset_worker())
