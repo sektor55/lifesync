@@ -1178,9 +1178,10 @@ async def render_habits(user_id):
     habits = get_habits(user_id)
 
     if not habits:
-        return "Нет привычек", keyboards.habits_menu()
+        text = "Нет привычек\n"
+    else:
+        text = "📋 <b>Мои привычки</b>\n\n"
 
-    text = "📋 <b>Мои привычки</b>\n\n"
     kb = []
 
     from datetime import datetime
@@ -1227,6 +1228,21 @@ async def render_habits(user_id):
             kb.append([
                 InlineKeyboardButton(text=name, callback_data=f"open_{hid}")
             ])
+
+    # =========================
+    # 🌅 МАГИЯ УТРА (НОВОЕ)
+    # =========================
+    cur.execute("SELECT morning_enabled FROM users WHERE id=?", (user_id,))
+    res = cur.fetchone()
+
+    if res and res[0] == 1:
+        progress = get_morning_progress(user_id, today)
+
+        text += (
+            f"\n🌅 <b>Магия утра</b>\n"
+            f"<code>{progress}</code>\n"
+            f"────────────\n"
+        )
 
     kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="habits")])
 
@@ -2430,6 +2446,400 @@ async def remove_money(m: Message):
     except:
         await m.answer("Ошибка")
 
+
+
+import asyncio
+from datetime import datetime
+
+
+# =========================
+# TIMER
+# =========================
+async def start_morning_timer(bot, chat_id, message_id, duration, text):
+    remaining = duration
+
+    while remaining > 0:
+        minutes = remaining // 60
+        seconds = remaining % 60
+
+        time_str = f"{minutes:02d}:{seconds:02d}"
+
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=f"{text}\n\n⏱ Осталось: {time_str}"
+            )
+        except:
+            pass
+
+        await asyncio.sleep(1)
+        remaining -= 1
+
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=f"{text}\n\n✅ Выполнено"
+        )
+    except:
+        pass
+
+
+# =========================
+# VISUALIZATION
+# =========================
+async def start_visualization(bot, chat_id, user_id, duration):
+    cur.execute("""
+        SELECT file_id FROM morning_visualization
+        WHERE user_id=?
+        ORDER BY position ASC
+    """, (user_id,))
+
+    images = [x[0] for x in cur.fetchall()]
+
+    if not images:
+        await bot.send_message(chat_id, "Нет изображений")
+        return
+
+    delay = duration // len(images)
+
+    for img in images:
+        await bot.send_photo(chat_id, img, caption="🧠 Сконцентрируйся")
+        await asyncio.sleep(delay)
+
+    await bot.send_message(chat_id, "✅ Выполнено")
+
+
+# =========================
+# SERVICE
+# =========================
+def is_morning_enabled(user_id):
+    cur.execute("SELECT morning_enabled FROM users WHERE id=?", (user_id,))
+    res = cur.fetchone()
+    return res and res[0] == 1
+
+
+async def finish_step_and_return(c, step):
+    date = datetime.now().strftime("%Y-%m-%d")
+
+    complete_morning_step(c.from_user.id, step, date)
+
+    await c.answer("✅ Выполнено")
+
+    await open_morning_menu(c)
+
+
+# =========================
+# MAIN MENU
+# =========================
+MORNING_TEXT = """🌅 Магия утра
+
+Начни день правильно.
+
+Проснись с намерением.
+Очисти мысли.
+Выпей воду.
+Сфокусируйся на будущем.
+
+Каждое утро — это новая жизнь.
+
+Выбери шаг и начни."""
+
+
+@dp.callback_query(lambda c: c.data == "morning_menu")
+async def open_morning_menu(call: CallbackQuery):
+    cur.execute("SELECT morning_enabled FROM users WHERE id=?", (call.from_user.id,))
+    res = cur.fetchone()
+
+    enabled = res[0] if res else 0
+
+    progress = get_morning_progress(call.from_user.id)
+
+    text = MORNING_TEXT
+
+    if enabled:
+        text += f"\n\n📊 Прогресс:\n{progress}"
+
+    await call.message.edit_text(
+        text,
+        reply_markup=morning_menu_kb(enabled)
+    )
+
+
+@dp.callback_query(lambda c: c.data == "toggle_morning")
+async def toggle_morning_handler(call: CallbackQuery):
+    toggle_morning(call.from_user.id)
+
+    await call.answer("Обновлено")
+    await open_morning_menu(call)
+
+
+# =========================
+# STEP 1 — ТИШИНА
+# =========================
+@dp.callback_query(F.data == "m_step_1")
+async def silence_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    await c.message.edit_text(
+        """🧘 Тишина
+
+Сконцентрируйся на дыхании""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_silence")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "start_silence")
+async def start_silence(c: CallbackQuery):
+    msg = await c.message.edit_text("Запуск...")
+
+    await start_morning_timer(
+        c.bot,
+        c.message.chat.id,
+        msg.message_id,
+        300,
+        "🧘 Тишина"
+    )
+
+    await finish_step_and_return(c, 1)
+
+
+# =========================
+# STEP 2 — АФФИРМАЦИИ
+# =========================
+@dp.callback_query(F.data == "m_step_2")
+async def affirm_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    cur.execute("SELECT text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
+    rows = cur.fetchall()
+
+    text_list = "\n".join([r[0] for r in rows]) if rows else "Добавь аффирмации"
+
+    await c.message.edit_text(
+        f"""💬 Аффирмации
+
+{text_list}""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_affirm")],
+            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_affirm")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "start_affirm")
+async def start_affirm(c: CallbackQuery):
+    cur.execute("SELECT text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
+    rows = cur.fetchall()
+
+    text = "💬 Аффирмации\n\n" + "\n".join([r[0] for r in rows]) if rows else "Добавь аффирмации"
+
+    msg = await c.message.edit_text("Запуск...")
+
+    await start_morning_timer(
+        c.bot,
+        c.message.chat.id,
+        msg.message_id,
+        300,
+        text
+    )
+
+    await finish_step_and_return(c, 2)
+
+
+# =========================
+# STEP 3 — ВИЗУАЛИЗАЦИЯ
+# =========================
+@dp.callback_query(F.data == "m_step_3")
+async def visual_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    await c.message.edit_text(
+        """🧠 Визуализация
+
+Представь будущее""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_visual")],
+            [InlineKeyboardButton(text="➕ Добавить картинку", callback_data="add_visual")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "start_visual")
+async def start_visual(c: CallbackQuery):
+    await start_visualization(
+        c.bot,
+        c.message.chat.id,
+        c.from_user.id,
+        300
+    )
+
+    await finish_step_and_return(c, 3)
+
+
+# =========================
+# STEP 4 — ДВИЖЕНИЕ
+# =========================
+@dp.callback_query(F.data == "m_step_4")
+async def move_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    await c.message.edit_text(
+        """🏃 Движение""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_move")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "start_move")
+async def start_move(c: CallbackQuery):
+    msg = await c.message.edit_text("Запуск...")
+
+    await start_morning_timer(
+        c.bot,
+        c.message.chat.id,
+        msg.message_id,
+        300,
+        "🏃 Движение"
+    )
+
+    await finish_step_and_return(c, 4)
+
+
+# =========================
+# STEP 5 — ЧТЕНИЕ
+# =========================
+@dp.callback_query(F.data == "m_step_5")
+async def read_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    await c.message.edit_text(
+        """📖 Чтение""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_read")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "start_read")
+async def start_read(c: CallbackQuery):
+    msg = await c.message.edit_text("Запуск...")
+
+    await start_morning_timer(
+        c.bot,
+        c.message.chat.id,
+        msg.message_id,
+        300,
+        "📖 Чтение"
+    )
+
+    await finish_step_and_return(c, 5)
+
+
+# =========================
+# STEP 6 — ПЛАНИРОВАНИЕ
+# =========================
+@dp.callback_query(F.data == "m_step_6")
+async def plan_menu(c: CallbackQuery):
+    if not is_morning_enabled(c.from_user.id):
+        return await c.answer("Функция выключена", show_alert=True)
+
+    await c.message.edit_text(
+        """🤖 Планирование дня
+
+Не забудь:
+— привычки
+— финансы""",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Выполнено", callback_data="done_plan")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "done_plan")
+async def done_plan(c: CallbackQuery):
+    await finish_step_and_return(c, 6)
+
+
+# =========================
+# ADD DATA
+# =========================
+@dp.callback_query(F.data == "add_affirm")
+async def add_affirm(c: CallbackQuery, state: FSMContext):
+    await c.message.answer("Введи аффирмацию:")
+    await state.set_state("await_affirm")
+
+
+@dp.message(StateFilter("await_affirm"))
+async def save_affirm(m: Message, state: FSMContext):
+    cur.execute(
+        "INSERT INTO morning_affirmations VALUES(?,?)",
+        (m.from_user.id, m.text)
+    )
+    conn.commit()
+
+    await m.answer("✅ Добавлено")
+    await state.clear()
+
+
+@dp.callback_query(F.data == "add_visual")
+async def add_visual(c: CallbackQuery, state: FSMContext):
+    await c.message.answer("Отправь картинку")
+    await state.set_state("await_img")
+
+
+@dp.message(StateFilter("await_img"))
+async def save_img(m: Message, state: FSMContext):
+    if not m.photo:
+        return
+
+    file_id = m.photo[-1].file_id
+
+    cur.execute(
+        "INSERT INTO morning_visualization VALUES(?,?,?)",
+        (m.from_user.id, file_id, 0)
+    )
+    conn.commit()
+
+    await m.answer("✅ Сохранено")
+    await state.clear()
+    
+def get_morning_progress(user_id):
+    from datetime import datetime
+
+    date = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute("""
+        SELECT step FROM morning_logs
+        WHERE user_id=? AND date=?
+    """, (user_id, date))
+
+    done_steps = [row[0] for row in cur.fetchall()]
+
+    bar = ""
+
+    for i in range(1, 7):
+        if i in done_steps:
+            bar += "🟩"
+        else:
+            bar += "⬜"
+
+    return bar    
 
 async def main():
     asyncio.create_task(reminder_worker(bot))

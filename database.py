@@ -679,3 +679,102 @@ def get_motivation_text():
         "🔥 Контроль денег = контроль жизни"
     ]
     return random.choice(texts)
+    
+    
+# =========================
+# 🌅 MORNING MAGIC
+# =========================
+
+def init_morning_magic():
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN morning_enabled INTEGER DEFAULT 0")
+    except:
+        pass
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS morning_logs(
+        user_id INTEGER,
+        step INTEGER,   -- 1-6
+        date TEXT,
+        status INTEGER  -- 0/1
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS morning_affirmations(
+        user_id INTEGER,
+        text TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS morning_visualization(
+        user_id INTEGER,
+        file_id TEXT,
+        position INTEGER
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS morning_settings(
+        user_id INTEGER,
+        step INTEGER,
+        duration INTEGER DEFAULT 300
+    )
+    """)
+
+    conn.commit()
+
+init_morning_magic()    
+
+def toggle_morning(user_id):
+    cur.execute("SELECT morning_enabled FROM users WHERE id=?", (user_id,))
+    res = cur.fetchone()
+
+    if not res:
+        return False
+
+    new_val = 0 if res[0] == 1 else 1
+
+    cur.execute(
+        "UPDATE users SET morning_enabled=? WHERE id=?",
+        (new_val, user_id)
+    )
+    conn.commit()
+
+    return new_val
+    
+ def complete_morning_step(user_id, step, date):
+    cur.execute("""
+        DELETE FROM morning_logs
+        WHERE user_id=? AND step=? AND date=?
+    """, (user_id, step, date))
+
+    cur.execute("""
+        INSERT INTO morning_logs VALUES(?,?,?,?)
+    """, (user_id, step, date, 1))
+
+    conn.commit()   
+    
+def get_morning_progress(user_id, date):
+    cur.execute("""
+        SELECT step FROM morning_logs
+        WHERE user_id=? AND date=? AND status=1
+    """, (user_id, date))
+
+    done = [x[0] for x in cur.fetchall()]
+
+    result = []
+    for i in range(1, 7):
+        if i in done:
+            result.append("🟩")
+        else:
+            result.append("⬜")
+
+    return "".join(result)    
+    
+def reset_morning_day(date):
+    cur.execute("""
+        DELETE FROM morning_logs WHERE date=?
+    """, (date,))
+    conn.commit()    
