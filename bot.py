@@ -2459,21 +2459,26 @@ async def return_to_active_timer(c: CallbackQuery):
     if c.from_user.id in ACTIVE_TIMERS:
         chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
 
+        # ❌ НЕ УДАЛЯЕМ СООБЩЕНИЕ
+        # await c.message.delete()
+
         try:
-            await c.message.delete()
+            # 👉 просто убираем кнопки у текущего меню
+            await c.message.edit_reply_markup(reply_markup=None)
         except:
             pass
 
         try:
-            await c.bot.edit_message_reply_markup(
-                chat_id=chat_id,
-                message_id=message_id,
-                reply_markup=None
+            # 👉 прокручиваем чат к нужному сообщению (через ответ)
+            await c.message.answer(
+                "⏱ Таймер уже запущен ↑",
+                reply_to_message_id=message_id
             )
         except:
             pass
 
         return True
+
     return False
 
 
@@ -2615,10 +2620,16 @@ async def open_morning_menu(call: CallbackQuery):
     if enabled:
         text += f"\n\n📊 Прогресс:\n\n{progress}"
 
-    await call.message.edit_text(
-        text,
-        reply_markup=morning_menu_kb(enabled)
-    )
+    try:
+        await call.message.edit_text(
+            text,
+            reply_markup=morning_menu_kb(enabled)
+        )
+    except:
+        await call.message.answer(
+            text,
+            reply_markup=morning_menu_kb(enabled)
+        )
 
 
 @dp.callback_query(lambda c: c.data == "toggle_morning")
@@ -2640,18 +2651,19 @@ async def silence_menu(c: CallbackQuery):
     if await return_to_active_timer(c):
         return
 
-    try:
-        await c.message.edit_text(
-            """🧘 Тишина
+    text = """🧘 Тишина
 
-Сконцентрируйся на дыхании""",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_silence")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-            ])
-        )
+Сконцентрируйся на дыхании"""
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Начать", callback_data="start_silence")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+    ])
+
+    try:
+        await c.message.edit_text(text, reply_markup=kb)
     except:
-        await c.message.answer("🧘 Тишина")
+        await c.message.answer(text, reply_markup=kb)
 
 
 @dp.callback_query(F.data == "start_silence")
@@ -2696,18 +2708,19 @@ async def affirm_menu(c: CallbackQuery):
     else:
         text_list = "Добавь аффирмации"
 
+    text = f"💬 Аффирмации\n\n{text_list}"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Начать", callback_data="start_affirm")],
+        [InlineKeyboardButton(text="➕ Добавить", callback_data="add_affirm")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_affirm")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+    ])
+
     try:
-        await c.message.edit_text(
-            f"💬 Аффирмации\n\n{text_list}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_affirm")],
-                [InlineKeyboardButton(text="➕ Добавить", callback_data="add_affirm")],
-                [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_affirm")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-            ])
-        )
+        await c.message.edit_text(text, reply_markup=kb)
     except:
-        await c.message.answer(f"💬 Аффирмации\n\n{text_list}")
+        await c.message.answer(text, reply_markup=kb)
 
 
 @dp.callback_query(F.data == "start_affirm")
@@ -2746,17 +2759,21 @@ async def visual_menu(c: CallbackQuery):
     if not is_morning_enabled(c.from_user.id):
         return await c.answer("Функция выключена", show_alert=True)
 
-    await c.message.edit_text(
-        """🧠 Визуализация
+    text = """🧠 Визуализация
 
-Представь будущее""",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_visual")],
-            [InlineKeyboardButton(text="➕ Добавить картинку", callback_data="add_visual")],
-            [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_visual")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-        ])
-    )
+Представь будущее"""
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Начать", callback_data="start_visual")],
+        [InlineKeyboardButton(text="➕ Добавить картинку", callback_data="add_visual")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_visual")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+    ])
+
+    try:
+        await c.message.edit_text(text, reply_markup=kb)
+    except:
+        await c.message.answer(text, reply_markup=kb)
 
 
 @dp.callback_query(F.data == "start_visual")
@@ -2782,16 +2799,17 @@ async def move_menu(c: CallbackQuery):
     if await return_to_active_timer(c):
         return
 
+    text = "🏃 Движение"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Начать", callback_data="start_move")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+    ])
+
     try:
-        await c.message.edit_text(
-            """🏃 Движение""",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_move")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-            ])
-        )
+        await c.message.edit_text(text, reply_markup=kb)
     except:
-        await c.message.answer("🏃 Движение")
+        await c.message.answer(text, reply_markup=kb)
 
 
 @dp.callback_query(F.data == "start_move")
@@ -2828,16 +2846,17 @@ async def read_menu(c: CallbackQuery):
     if await return_to_active_timer(c):
         return
 
+    text = "📖 Чтение"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ Начать", callback_data="start_read")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+    ])
+
     try:
-        await c.message.edit_text(
-            """📖 Чтение""",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_read")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-            ])
-        )
+        await c.message.edit_text(text, reply_markup=kb)
     except:
-        await c.message.answer("📖 Чтение")
+        await c.message.answer(text, reply_markup=kb)
 
 
 @dp.callback_query(F.data == "start_read")
