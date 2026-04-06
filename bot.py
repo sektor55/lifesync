@@ -1923,7 +1923,6 @@ def set_fin_enabled(user_id, val: int):
     cur.execute("UPDATE users SET fin_enabled=? WHERE id=?", (val, user_id))
     conn.commit()
 
-
 @dp.message(F.text == "💎 Подписка")
 async def subscription_handler(m: Message):
     await m.answer(
