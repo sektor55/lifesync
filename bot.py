@@ -2455,6 +2455,28 @@ from datetime import datetime
 # =========================
 # TIMER
 # =========================
+async def return_to_active_timer(c: CallbackQuery):
+    if c.from_user.id in ACTIVE_TIMERS:
+        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
+
+        try:
+            await c.message.delete()
+        except:
+            pass
+
+        try:
+            await c.bot.edit_message_reply_markup(
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=None
+            )
+        except:
+            pass
+
+        return True
+    return False
+
+
 async def start_morning_timer(bot, chat_id, message_id, duration, text, user_id):
     ACTIVE_TIMERS[user_id] = (chat_id, message_id)
 
@@ -2497,22 +2519,47 @@ async def start_visualization(bot, chat_id, user_id, duration):
     cur.execute("""
         SELECT file_id FROM morning_visualization
         WHERE user_id=?
-        ORDER BY position ASC
+        ORDER BY position
     """, (user_id,))
-
     images = [x[0] for x in cur.fetchall()]
 
     if not images:
         await bot.send_message(chat_id, "Нет изображений")
         return
 
-    delay = 30  # 👈 фикс 30 секунд
+    total = len(images)
+    time_per_image = duration // total
+    remaining = duration
+
+    msg = await bot.send_message(chat_id, "Запуск...")
+    ACTIVE_TIMERS[user_id] = (chat_id, msg.message_id)
 
     for i, img in enumerate(images, start=1):
-        await bot.send_photo(chat_id, img, caption=f"🧠 {i}/{len(images)}")
-        await asyncio.sleep(delay)
+        await bot.send_photo(chat_id, img)
 
-    await bot.send_message(chat_id, "✅ Выполнено")
+        for _ in range(time_per_image):
+            minutes = remaining // 60
+            seconds = remaining % 60
+
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg.message_id,
+                    text=f"🧠 {i}/{total}\n\n⏱ Осталось: {minutes:02d}:{seconds:02d}"
+                )
+            except:
+                pass
+
+            await asyncio.sleep(1)
+            remaining -= 1
+
+    await bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=msg.message_id,
+        text="✅ Выполнено"
+    )
+
+    ACTIVE_TIMERS.pop(user_id, None)
 
 
 # =========================
@@ -2590,39 +2637,37 @@ async def silence_menu(c: CallbackQuery):
     if not is_morning_enabled(c.from_user.id):
         return await c.answer("Функция выключена", show_alert=True)
 
-    await c.message.edit_text(
-        """🧘 Тишина
+    if await return_to_active_timer(c):
+        return
+
+    try:
+        await c.message.edit_text(
+            """🧘 Тишина
 
 Сконцентрируйся на дыхании""",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_silence")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-        ])
-    )
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_silence")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+            ])
+        )
+    except:
+        await c.message.answer("🧘 Тишина")
 
 
 @dp.callback_query(F.data == "start_silence")
 async def start_silence(c: CallbackQuery):
-    # 🔥 если уже есть таймер — возвращаем к нему
-    if c.from_user.id in ACTIVE_TIMERS:
-        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
 
-        try:
-            await c.bot.forward_message(
-                chat_id=c.message.chat.id,
-                from_chat_id=chat_id,
-                message_id=message_id
-            )
-        except:
-            pass
-
+    if await return_to_active_timer(c):
         return
 
-    msg = await c.message.edit_text("Запуск...")
+    try:
+        msg = await c.message.edit_text("Запуск...")
+    except:
+        msg = await c.message.answer("Запуск...")
 
     await start_morning_timer(
         c.bot,
-        c.message.chat.id,
+        msg.chat.id,
         msg.message_id,
         300,
         "🧘 Тишина",
@@ -2640,38 +2685,35 @@ async def affirm_menu(c: CallbackQuery):
     if not is_morning_enabled(c.from_user.id):
         return await c.answer("Функция выключена", show_alert=True)
 
-    cur.execute("SELECT text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
+    if await return_to_active_timer(c):
+        return
+
+    cur.execute("SELECT rowid, text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
     rows = cur.fetchall()
 
-    text_list = "\n".join([r[0] for r in rows]) if rows else "Добавь аффирмации"
+    if rows:
+        text_list = "\n".join([f"{i+1}. {r[1]}" for i, r in enumerate(rows)])
+    else:
+        text_list = "Добавь аффирмации"
 
-    await c.message.edit_text(
-        f"""💬 Аффирмации
-
-{text_list}""",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_affirm")],
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_affirm")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-        ])
-    )
+    try:
+        await c.message.edit_text(
+            f"💬 Аффирмации\n\n{text_list}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_affirm")],
+                [InlineKeyboardButton(text="➕ Добавить", callback_data="add_affirm")],
+                [InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_affirm")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+            ])
+        )
+    except:
+        await c.message.answer(f"💬 Аффирмации\n\n{text_list}")
 
 
 @dp.callback_query(F.data == "start_affirm")
 async def start_affirm(c: CallbackQuery):
-    # 🔥 возврат к активному таймеру
-    if c.from_user.id in ACTIVE_TIMERS:
-        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
 
-        try:
-            await c.bot.forward_message(
-                chat_id=c.message.chat.id,
-                from_chat_id=chat_id,
-                message_id=message_id
-            )
-        except:
-            pass
-
+    if await return_to_active_timer(c):
         return
 
     cur.execute("SELECT text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
@@ -2679,11 +2721,14 @@ async def start_affirm(c: CallbackQuery):
 
     text = "💬 Аффирмации\n\n" + "\n".join([r[0] for r in rows]) if rows else "Добавь аффирмации"
 
-    msg = await c.message.edit_text("Запуск...")
+    try:
+        msg = await c.message.edit_text("Запуск...")
+    except:
+        msg = await c.message.answer("Запуск...")
 
     await start_morning_timer(
         c.bot,
-        c.message.chat.id,
+        msg.chat.id,
         msg.message_id,
         300,
         text,
@@ -2734,38 +2779,37 @@ async def move_menu(c: CallbackQuery):
     if not is_morning_enabled(c.from_user.id):
         return await c.answer("Функция выключена", show_alert=True)
 
-    await c.message.edit_text(
-        """🏃 Движение""",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_move")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-        ])
-    )
+    if await return_to_active_timer(c):
+        return
+
+    try:
+        await c.message.edit_text(
+            """🏃 Движение""",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_move")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+            ])
+        )
+    except:
+        await c.message.answer("🏃 Движение")
 
 
 @dp.callback_query(F.data == "start_move")
 async def start_move(c: CallbackQuery):
-    if c.from_user.id in ACTIVE_TIMERS:
-        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
 
-        try:
-            await c.bot.forward_message(
-                chat_id=c.message.chat.id,
-                from_chat_id=chat_id,
-                message_id=message_id
-            )
-        except:
-            pass
-
+    if await return_to_active_timer(c):
         return
 
-    msg = await c.message.edit_text("Запуск...")
+    try:
+        msg = await c.message.edit_text("Запуск...")
+    except:
+        msg = await c.message.answer("Запуск...")
 
     await start_morning_timer(
         c.bot,
-        c.message.chat.id,
+        msg.chat.id,
         msg.message_id,
-        300,
+        1200,
         "🏃 Движение",
         c.from_user.id
     )
@@ -2781,38 +2825,37 @@ async def read_menu(c: CallbackQuery):
     if not is_morning_enabled(c.from_user.id):
         return await c.answer("Функция выключена", show_alert=True)
 
-    await c.message.edit_text(
-        """📖 Чтение""",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="▶️ Начать", callback_data="start_read")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
-        ])
-    )
+    if await return_to_active_timer(c):
+        return
+
+    try:
+        await c.message.edit_text(
+            """📖 Чтение""",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="▶️ Начать", callback_data="start_read")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="morning_menu")]
+            ])
+        )
+    except:
+        await c.message.answer("📖 Чтение")
 
 
 @dp.callback_query(F.data == "start_read")
 async def start_read(c: CallbackQuery):
-    if c.from_user.id in ACTIVE_TIMERS:
-        chat_id, message_id = ACTIVE_TIMERS[c.from_user.id]
 
-        try:
-            await c.bot.forward_message(
-                chat_id=c.message.chat.id,
-                from_chat_id=chat_id,
-                message_id=message_id
-            )
-        except:
-            pass
-
+    if await return_to_active_timer(c):
         return
 
-    msg = await c.message.edit_text("Запуск...")
+    try:
+        msg = await c.message.edit_text("Запуск...")
+    except:
+        msg = await c.message.answer("Запуск...")
 
     await start_morning_timer(
         c.bot,
-        c.message.chat.id,
+        msg.chat.id,
         msg.message_id,
-        300,
+        1200,
         "📖 Чтение",
         c.from_user.id
     )
@@ -2843,7 +2886,13 @@ async def plan_menu(c: CallbackQuery):
 
 @dp.callback_query(F.data == "done_plan")
 async def done_plan(c: CallbackQuery):
-    await finish_step_and_return(c, 6)
+    date = datetime.now().strftime("%Y-%m-%d")
+
+    complete_morning_step(c.from_user.id, 6, date)
+
+    await c.answer("✅ Выполнено")
+
+    await open_morning_menu(c)
 
 
 # =========================
@@ -2865,13 +2914,51 @@ async def save_affirm(m: Message, state: FSMContext):
 
     await state.clear()
 
-    # 👇 сразу открываем меню обратно
-    fake_call = type("obj", (), {
-        "from_user": m.from_user,
-        "message": m
-    })
+    await m.answer("✅ Добавлено")
 
-    await affirm_menu(fake_call)
+    # 👇 НОРМАЛЬНЫЙ ВОЗВРАТ
+    await affirm_menu(
+        CallbackQuery(
+            id="fake",
+            from_user=m.from_user,
+            chat_instance="",
+            message=m
+        )
+    )
+
+@dp.callback_query(F.data == "delete_affirm")
+async def delete_affirm_menu(c: CallbackQuery):
+    cur.execute("SELECT rowid, text FROM morning_affirmations WHERE user_id=?", (c.from_user.id,))
+    rows = cur.fetchall()
+
+    if not rows:
+        return await c.answer("Нет аффирмаций", show_alert=True)
+
+    kb = []
+
+    for i, row in enumerate(rows):
+        kb.append([
+            InlineKeyboardButton(
+                text=f"❌ {i+1}",
+                callback_data=f"del_affirm_{row[0]}"
+            )
+        ])
+
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="m_step_2")])
+
+    await c.message.edit_text("Выбери для удаления:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+@dp.callback_query(F.data.startswith("del_affirm_"))
+async def delete_affirm(c: CallbackQuery):
+    rowid = int(c.data.split("_")[2])
+
+    cur.execute("DELETE FROM morning_affirmations WHERE rowid=?", (rowid,))
+    conn.commit()
+
+    await c.answer("Удалено")
+
+    await delete_affirm_menu(c)
 
 @dp.callback_query(F.data == "add_visual")
 async def add_visual(c: CallbackQuery, state: FSMContext):
