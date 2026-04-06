@@ -577,7 +577,7 @@ async def inc_set(c: CallbackQuery, state: FSMContext):
 # =========================
 # 📊 СТАТИСТИКА (ИСПРАВЛЕНА)
 # =========================
-@dp.callback_query(F.data == "finance_stats")
+@@dp.callback_query(F.data == "finance_stats")
 async def stats(c: CallbackQuery):
     users = get_family_members(c.from_user.id)
 
@@ -637,7 +637,7 @@ async def stats(c: CallbackQuery):
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
                     gender = profile[3] if profile and len(profile) > 3 else "male"
-                    emoji = "👤" if gender == "male" else "👩"
+                    emoji = "👩" if gender == "female" else "👤"
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
@@ -662,21 +662,20 @@ async def stats(c: CallbackQuery):
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
                     gender = profile[3] if profile and len(profile) > 3 else "male"
-                    emoji = "👤" if gender == "male" else "👩"
+                    emoji = "👩" if gender == "female" else "👤"
                     text += f"  {emoji}{name} — {val} ₽\n"
 
     else:
         text += "нет данных\n"
 
-    # =========================
-    # ✅ ДОБАВЛЕНО: ИТОГИ (НЕ ЛОМАЕТ ЛОГИКУ)
-    # =========================
+    # ✅ ИТОГИ (НОВЫЙ ФОРМАТ)
     balance = total_income - total_expense
 
     text += (
-        "\n──────────────────\n"
+        "\n────────────────────────\n"
         f"📈 Баланс: {balance} ₽\n"
-        f"💰 Доход: {total_income} ₽ | Расход: {total_expense} ₽\n"
+        f"Доход: {total_income} ₽ | Расход: {total_expense} ₽\n"
+        "────────────────────────\n\n"
     )
 
     savings = get_savings(c.from_user.id)
@@ -696,7 +695,6 @@ async def stats(c: CallbackQuery):
         text_status = "Отлично"
 
     text += (
-        "──────────────────\n\n"
         f"💰 Накопления — {savings} ₽\n"
         f"📊 Ты откладываешь: {percent}% / {status} {text_status}\n"
     )
@@ -1929,7 +1927,7 @@ def set_fin_enabled(user_id, val: int):
 @dp.message(F.text == "💎 Подписка")
 async def subscription_handler(m: Message):
     await m.answer(
-        "📦 Подписка\n\nВыбери функцию:",
+        "Выбери функцию:",
         reply_markup=keyboards.subscription_menu()
     )
 
@@ -1953,6 +1951,12 @@ async def subscription_handler(m: Message):
         reply_markup=kb
     )
 
+@dp.callback_query(F.data == "back_sub")
+async def back_subscription(c: CallbackQuery):
+    await c.message.answer(
+        "Выбери функцию:",
+        reply_markup=keyboards.subscription_menu()
+    )
 
 @dp.callback_query(F.data == "fin_toggle")
 async def fin_toggle(c: CallbackQuery):

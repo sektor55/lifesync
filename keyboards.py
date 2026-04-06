@@ -74,7 +74,7 @@ def subscription_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Финансовая система", callback_data="fin_menu")],
         [InlineKeyboardButton(text="🌅 Магия утра", callback_data="morning_menu")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_sub")]
     ])
 
 # ✅ НОВОЕ (ТОЛЬКО ДОБАВИЛИ)
