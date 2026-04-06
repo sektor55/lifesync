@@ -1945,7 +1945,7 @@ async def subscription_handler(m: Message):
     await m.answer(
         "Выбери функцию:",
         reply_markup=keyboards.subscription_menu()
-    ))
+    )
 
 @dp.callback_query(F.data == "back_sub")
 async def back_subscription(c: CallbackQuery):
