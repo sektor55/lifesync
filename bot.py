@@ -633,16 +633,16 @@ async def stats(c: CallbackQuery):
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
                     contributors.append((uid, name, val))
 
-            # ❗ НЕ ТРОГАЕМ твою логику (>1)
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
 
                     gender = "male"
                     if profile and len(profile) > 3 and profile[3]:
-                        gender = str(profile[3]).lower()
+                        gender = str(profile[3]).strip().lower()
 
-                    if gender in ["female", "f", "woman", "ж", "жен"]:
+                    # ✅ ГЛАВНЫЙ ФИКС
+                    if gender in ["female", "f", "woman", "ж", "жен", "👩"]:
                         emoji = "👩"
                     else:
                         emoji = "👤"
@@ -667,16 +667,16 @@ async def stats(c: CallbackQuery):
                     name = profile[0] if profile and profile[0] else f"id:{uid}"
                     contributors.append((uid, name, val))
 
-            # ❗ НЕ ТРОГАЕМ твою логику (>1)
             if len(contributors) > 1:
                 for uid2, name, val in contributors:
                     profile = get_user_profile(uid2)
 
                     gender = "male"
                     if profile and len(profile) > 3 and profile[3]:
-                        gender = str(profile[3]).lower()
+                        gender = str(profile[3]).strip().lower()
 
-                    if gender in ["female", "f", "woman", "ж", "жен"]:
+                    # ✅ ГЛАВНЫЙ ФИКС
+                    if gender in ["female", "f", "woman", "ж", "жен", "👩"]:
                         emoji = "👩"
                     else:
                         emoji = "👤"
@@ -2134,11 +2134,13 @@ async def set_color_callback(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
     if "name" in data:
+        gender = data.get("gender")
+
         cur.execute("""
             UPDATE users
-            SET name=?, timezone=?, color=?
+            SET name=?, timezone=?, color=?, gender=?
             WHERE id=?
-        """, (data["name"], data["timezone"], color, c.from_user.id))
+        """, (data["name"], data["timezone"], color, gender, c.from_user.id))
         conn.commit()
 
         await state.clear()
@@ -2255,7 +2257,19 @@ async def change_name(c: CallbackQuery, state: FSMContext):
 
 @dp.message(SettingsStates.change_name)
 async def set_name_settings(m: Message, state: FSMContext):
-    set_user_profile(m.from_user.id, m.text, get_user_color(m.from_user.id))
+    profile = get_user_profile(m.from_user.id)
+
+    gender = None
+    if profile and len(profile) > 3:
+        gender = profile[3]
+
+    set_user_profile(
+        m.from_user.id,
+        m.text,
+        get_user_color(m.from_user.id),
+        gender
+    )
+
     await state.clear()
     await m.answer("✅ Имя обновлено")
 
